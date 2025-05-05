@@ -13,15 +13,19 @@ extern "C" {
 #endif
 
 #ifdef __GNUC__
-#define _TAPKI_NORETURN __attribute__((noreturn))
-#define _TAPKI_UNLIKELY(x) __builtin_expect(!!(x), 0)
-#define _TAPKI_ALLOC_ATTR(sz, al) __attribute__((malloc, alloc_size(sz), alloc_align(al)))
-#define _TAPKI_FMT_ATTR(fmt, args) __attribute__((format(printf, fmt, args)))
+    #define _TAPKI_NORETURN __attribute__((noreturn))
+    #define _TAPKI_UNLIKELY(x) __builtin_expect(!!(x), 0)
+    #define _TAPKI_ALLOC_ATTR(sz, al) __attribute__((malloc, alloc_size(sz), alloc_align(al)))
+    #define _TAPKI_FMT_ATTR(fmt, args) __attribute__((format(printf, fmt, args)))
 #else
-#define _TAPKI_NORETURN __declspec(noreturn)
-#define _TAPKI_UNLIKELY(x) x
-#define _TAPKI_ALLOC_ATTR(sz, al)
-#define _TAPKI_FMT_ATTR(fmt, args)
+    #if defined(_MSC_VER)
+        #define _TAPKI_NORETURN __declspec(noreturn)
+    #else
+        #define _TAPKI_NORETURN
+    #endif
+    #define _TAPKI_UNLIKELY(x) x
+    #define _TAPKI_ALLOC_ATTR(sz, al)
+    #define _TAPKI_FMT_ATTR(fmt, args)
 #endif
 
 // If TAPKI_FULL_NAMESPACE is not defined -> you can use Public API without Tapki prefix
@@ -68,41 +72,74 @@ _TAPKI_FMT_ATTR(2, 3) TapkiStr TapkiF(TapkiArena* ar, const char* __restrict__ f
 TapkiStr TapkiVF(TapkiArena* ar, const char* __restrict__ fmt, va_list list);
 TapkiStr TapkiS(TapkiArena* ar, const char* s);
 
-TapkiStr ReadFile(TapkiArena* ar, const char* file);
-void WriteFile(TapkiArena* ar, const char* file, const char* contents);
-void AppendFile(TapkiArena* ar, const char* file, const char* contents);
+TapkiStr* TapkiStrMapAt(TapkiArena *ar, TapkiStrMap* map);
+void TapkiStrMapErase(TapkiStrMap* map, const char* key);
+
+TapkiStr TapkiReadFile(TapkiArena* ar, const char* file);
+void TapkiWriteFile(const char* file, const char* contents);
+void TapkiAppendFile(const char* file, const char* contents);
+
+typedef struct TapkiCLI {
+    bool ok;
+    TapkiStr error;
+    TapkiStrVec positional;
+    TapkiStrMap values;
+} TapkiCLI;
+
+TapkiCLI TapkiParseCLI(TapkiArena *ar, int argc, const char* const* argv);
 
 #ifndef TAPKI_FULL_NAMESPACE
+
 typedef TapkiArena Arena;
 typedef TapkiStr Str;
 typedef TapkiStrPair StrPair;
 typedef TapkiStrMap StrMap;
 typedef TapkiStrVec StrVec;
-#define Vec             TapkiVec
-#define VecAppend       TapkiVecAppend
-#define VecPush         TapkiVecPush
-#define VecPop          TapkiVecPop
-#define VecAt           TapkiVecAt
-#define VecForEach      TapkiVecForEach
-#define VecErase        TapkiVecErase
-#define VecClear        TapkiVecClear
-#define VecReserve      TapkiVecReserve
-#define ArenaCreate     TapkiArenaCreate
+typedef TapkiCLI CLI;
+
+#define Vec                 TapkiVec
+#define VecAppend           TapkiVecAppend
+#define VecPush             TapkiVecPush
+#define VecPop              TapkiVecPop
+#define VecAt               TapkiVecAt
+#define VecForEach          TapkiVecForEach
+#define VecErase            TapkiVecErase
+#define VecClear            TapkiVecClear
+#define VecReserve          TapkiVecReserve
+#define ArenaCreate         TapkiArenaCreate
 #define ArenaAllocAligned   TapkiArenaAllocAligned
-#define ArenaAlloc      TapkiArenaAlloc
-#define ArenaClear      TapkiArenaClear
-#define ArenaFree       TapkiArenaFree
-#define F               TapkiF
-#define VF              TapkiVF
-#define S               TapkiS
-#define StrAppend       TapkiStrAppend
-#define StrErase        TapkiStrErase
-#define StrSplit        TapkiStrSplit
-#define StrSub          TapkiStrSub
-#define StrFind         TapkiStrFind
-#define npos            Tapki_npos
-#define Die             TapkiDie
+#define ArenaAlloc          TapkiArenaAlloc
+#define ArenaClear          TapkiArenaClear
+#define ArenaFree           TapkiArenaFree
+#define F                   TapkiF
+#define S                   TapkiS
+#define StrAppend           TapkiStrAppend
+#define StrErase            TapkiStrErase
+#define StrSplit            TapkiStrSplit
+#define StrSub              TapkiStrSub
+#define StrFind             TapkiStrFind
+#define StrMapAt            TapkiStrMapAt
+#define StrMapErase         TapkiStrMapErase
+#define npos                Tapki_npos
+#define Die                 TapkiDie
+#define DieF                TapkiDieF
+#define WriteFile           TapkiWriteFile
+#define AppendFile          TapkiAppendFile
+#define ReadFile            TapkiReadFile
+#define ParseCLI            TapkiParseCLI
+
 #endif
+
+
+
+
+
+
+
+
+
+
+
 
 // --- Private stuff
 
@@ -118,23 +155,21 @@ char *__tapki_vec_reserve(TapkiArena* ar, void* _vec, size_t count, size_t tsz, 
 void __tapki_vec_append(TapkiArena* ar, void* _vec, void* data, size_t count, size_t tsz, size_t al);
 TapkiStr* __tapkis_append(TapkiArena *ar, TapkiStr* target, const char **src, size_t count);
 void __tapki_vec_erase(void* _vec, size_t idx, size_t tsz);
-void __tapki_begin(int argc, const char** argv);
-void __tapki_end(void);
 
 static inline void* __tapki_vec_push(TapkiArena* ar, void* _vec, size_t tsz, size_t al) {
     __TapkiVec* vec = (__TapkiVec*)_vec;
-    return (vec->size == vec->cap ? __tapki_vec_reserve(ar, vec, vec->cap + 1, tsz, al) : vec->data) + (vec->size++ * tsz);
+    return (vec->size >= vec->cap ? __tapki_vec_reserve(ar, vec, vec->cap + 1, tsz, al) : vec->data) + (vec->size++ * tsz);
 }
 
 static inline void* __tapki_vec_pop(void* _vec, size_t tsz) {
     __TapkiVec* vec = (__TapkiVec*)_vec;
-    if (!vec->size) TapkiDie("vector.pop");
+    if (!vec->size) TapkiDie("vector.pop: Vector is empty");
     return vec->data + (vec->size-- * tsz);
 }
 
 static inline void* __tapki_vec_at(void* _vec, size_t pos, size_t tsz) {
     __TapkiVec* vec = (__TapkiVec*)_vec;
-    if (vec->size <= pos) TapkiDie("vector.at");
+    if (vec->size <= pos) TapkiDieF("vector.at: index(%zu) > size(%zu)", pos, vec->size);
     return vec->data;
 }
 

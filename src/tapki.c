@@ -15,7 +15,8 @@ extern "C" {
 void __tapki_vec_erase(void *_vec, size_t idx, size_t tsz)
 {
     __TapkiVec* vec = (__TapkiVec*)_vec;
-    if (_TAPKI_UNLIKELY(vec->size <= idx)) TapkiDie("vector.erase");
+    if (_TAPKI_UNLIKELY(vec->size <= idx))
+        TapkiDieF("vector.erase: index(%zu) > size(%zu)", idx, vec->size);
     size_t tail = (--vec->size) - idx;
     if (tail) {
         memmove(vec->data + idx * tsz, vec->data + (idx + 1) * tsz, tail * tsz);
@@ -27,7 +28,8 @@ void __tapki_vec_erase(void *_vec, size_t idx, size_t tsz)
 void TapkiDie(const char *msg)
 {
     fprintf(stderr, "TAPKI: FATAL: %s", msg);
-    exit(1);
+    fflush(stderr);
+    abort();
 }
 
 void TapkiDieF(const char *fmt, ...)
@@ -276,22 +278,39 @@ TapkiStr TapkiS(TapkiArena *ar, const char *s)
     return result;
 }
 
-void WriteFile(TapkiArena *ar, const char *file, const char *contents)
-{
-}
-
-void AppendFile(TapkiArena *ar, const char *file, const char *contents)
+TapkiStr *TapkiStrMapAt(TapkiArena *ar, TapkiStrMap *map)
 {
 
 }
 
-TapkiStr ReadFile(TapkiArena *ar, const char *file)
+void TapkiStrMapErase(TapkiStrMap *map, const char *key)
+{
+
+}
+
+void TapkiWriteFile(const char *file, const char *contents)
+{
+}
+
+void TapkiAppendFile(const char *file, const char *contents)
+{
+
+}
+
+TapkiCLI TapkiParseCLI(TapkiArena *ar, int argc, const char * const *argv)
+{
+    TapkiCLI res = {0};
+
+    return res;
+}
+
+TapkiStr TapkiReadFile(TapkiArena *ar, const char *file)
 {
     FILE* f = fopen(file, "rb");
     if (!f)
-        TapkiDie(F(ar, "Could not open for read: %s => %s", file, strerror(errno)).data);
+        TapkiDieF("Could not open for read: %s => %s\n", file, strerror(errno));
     if (fseek(f, 0, SEEK_END))
-        TapkiDie(F(ar, "Could not seek file: %s => %s", file, strerror(errno)).data);
+        TapkiDieF("Could not seek file: %s => %s\n", file, strerror(errno));
     TapkiStr str = __tapkis_withn(ar, ftell(f));
     fseek(f, 0, SEEK_SET);
     fread(str.data, str.size, 1, f);
