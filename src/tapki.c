@@ -1,33 +1,16 @@
 ﻿#include "tapki.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define _TAPKI_MEM(dest, src, count) if (src && count) memcpy(dest, src, count)
-#define _TAPKI_CSTR(s) (_TAPKI_UNLIKELY(!s) ? "" : s)
-
-int8_t *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, size_t al)
-{
-    if (tsz == 1)
-        count++;
-    __TapkiVec* vec = (__TapkiVec*)_vec;
-    if (vec->cap <= count) {
-        size_t ncap = vec->cap * 2;
-        vec->cap = (ncap < count ? count : ncap);
-        int8_t* newData = (int8_t*)ArenaAllocAligned(ar, vec->cap * tsz, al);
-        _TAPKI_MEM(newData, vec->data, vec->size * tsz);
-        vec->data = newData;
-        if (_TAPKI_UNLIKELY(!vec->data)) TapkiDie("vector.reserve");
-    }
-    if (tsz == 1 && vec->data)
-        vec->data[count - 1] = 0;
-    return vec->data;
-}
+#define _TAPKI_MEMSET(dest, src, count) if (src && count) memcpy(dest, src, count)
 
 void __tapki_vec_erase(void *_vec, size_t idx, size_t tsz)
 {
@@ -47,36 +30,37 @@ void TapkiDie(const char *msg)
     exit(1);
 }
 
+void TapkiDieF(const char *fmt, ...)
+{
+    TapkiArena* a = TapkiArenaCreate(1024);
+    va_list vargs;
+    va_start(vargs, fmt);
+    TapkiDie(TapkiVF(a, fmt, vargs).data);
+}
+
 void TapkiVecClear(void *_vec)
 {
     __TapkiVec* vec = (__TapkiVec*)_vec;
     vec->size = 0;
 }
 
-static TapkiString __tapkis_withn(TapkiArena* ar, size_t res) {
-    TapkiString str = {0};
+static TapkiStr __tapkis_withn(TapkiArena* ar, size_t res) {
+    TapkiStr str = {0};
     TapkiVecReserve(ar, &str, res);
-    str.size = str.cap = res;
+    str.size = res;
     str.data[res] = 0;
     return str;
 }
-
-static TapkiString __tapkis_strv(TapkiArena* ar, const char* s, size_t n) {
-    TapkiString res = __tapkis_withn(ar, n);
-    _TAPKI_MEM(res.data, s, n);
-    return res;
-}
-
 
 void __tapki_vec_append(TapkiArena *ar, void *_vec, void *data, size_t count, size_t tsz, size_t al)
 {
     __TapkiVec* vec = (__TapkiVec*)_vec;
     __tapki_vec_reserve(ar, vec, vec->size + count, tsz, al);
-    _TAPKI_MEM(vec->data + vec->size * tsz, data, count * tsz);
+    _TAPKI_MEMSET(vec->data + vec->size * tsz, data, count * tsz);
     vec->size += count;
 }
 
-TapkiString* __tapkis_append(TapkiArena *ar, TapkiString *target, const char** strs, size_t count)
+TapkiStr* __tapkis_append(TapkiArena *ar, TapkiStr *target, const char** strs, size_t count)
 {
     size_t total = 0;
     size_t lens[count];
@@ -86,94 +70,73 @@ TapkiString* __tapkis_append(TapkiArena *ar, TapkiString *target, const char** s
     TapkiVecReserve(ar, target, target->size + total + 1);
     for (size_t i = 0; i < count; ++i) {
         void* out = target->data + target->size;
-        _TAPKI_MEM(out, strs[i], lens[i]);
+        _TAPKI_MEMSET(out, strs[i], lens[i]);
         target->size += lens[i];
     }
     target->data[target->size] = 0;
     return target;
 }
 
-TapkiString __tapkis_itos(TapkiArena *ar, long long i)
-{
-    char buff[200];
-    return __tapkis_strv(ar, buff, sprintf(buff, "%lli", i));
-}
-
-TapkiString __tapkis_utos(TapkiArena *ar, unsigned long long u)
-{
-    char buff[200];
-    return __tapkis_strv(ar, buff, sprintf(buff, "%llu", u));
-}
-
-TapkiString __tapkis_ftos(TapkiArena *ar, double f)
-{
-    char buff[200];
-    return __tapkis_strv(ar, buff, sprintf(buff, "%lf", f));
-}
-
-TapkiString __tapkis_stos(TapkiArena *ar, const char *s)
+TapkiStr __tapkis_stos(TapkiArena *ar, const char *s)
 {
     size_t n = strlen(s);
-    TapkiString res = __tapkis_withn(ar, n);
-    _TAPKI_MEM(res.data, s, n);
+    TapkiStr res = __tapkis_withn(ar, n);
+    _TAPKI_MEMSET(res.data, s, n);
     return res;
 }
 
-TapkiString __tapkis_pcopy(TapkiArena *ar, const TapkiString *str)
+TapkiStr __tapkis_pcopy(TapkiArena *ar, const TapkiStr *str)
 {
-    TapkiString res = __tapkis_withn(ar, str->size);
-    _TAPKI_MEM(res.data, str->data, str->size);
+    TapkiStr res = __tapkis_withn(ar, str->size);
+    _TAPKI_MEMSET(res.data, str->data, str->size);
     return res;
 }
 
-TapkiString TapkiStringSub(TapkiArena *ar, const char *target, size_t from, size_t to)
+TapkiStr TapkiStrSub(TapkiArena *ar, const char *target, size_t from, size_t to)
 {
     assert(to >= from);
     if (!target) target = "";
     size_t tsz = strlen(target);
     assert(from <= tsz);
     to = to > tsz ? tsz : to;
-    TapkiString res = {0};
+    TapkiStr res = {0};
     size_t diff = (size_t)(to - from);
     TapkiVecReserve(ar, &res, diff);
-    _TAPKI_MEM(res.data, target + from, diff);
+    _TAPKI_MEMSET(res.data, target + from, diff);
     return res;
 }
 
-size_t TapkiStringFind(const char *target, const char *what, size_t offset)
+size_t TapkiStrFind(const char *target, const char *what, size_t offset)
 {
     const char* found = strstr(target + offset, what);
-    if (!found) return TapkiNpos;
+    if (!found) return Tapki_npos;
     return (size_t)(found - target);
 }
 
-TapkiStringVec TapkiStringSplit(TapkiArena *ar, const char *target, const char *delim)
+TapkiStrVec TapkiStrSplit(TapkiArena *ar, const char *target, const char *delim)
 {
     if (!target) target = "";
     if (!delim) delim = "";
-    TapkiStringVec result = {0};
+    TapkiStrVec result = {0};
     size_t offs = 0;
     size_t pos = 0;
     size_t dsz = strlen(delim);
     while(true) {
-        pos = TapkiStringFind(target, delim, offs);
-        TapkiString part = TapkiStringSub(ar, target, offs, pos);
+        pos = TapkiStrFind(target, delim, offs);
+        TapkiStr part = TapkiStrSub(ar, target, offs, pos);
         TapkiVecAppend(ar, &result, part);
-        if (pos == TapkiNpos) {
+        if (pos == Tapki_npos) {
             return result;
         }
         offs = pos + dsz;
     }
 }
 
-void TapkiStringErase(TapkiString *target, size_t index)
+void TapkiStrErase(TapkiStr *target, size_t index)
 {
     TapkiVecErase(target, index);
     target->data[target->size] = 0;
 }
-
-#undef _TAPKI_CSTR
-#undef _TAPKI_MEM
 
 typedef struct __TapkiChunk {
     struct __TapkiChunk* next;
@@ -189,20 +152,18 @@ struct TapkiArena {
 };
 
 static void __TapkiArenaNext(TapkiArena* ar, size_t cap) {
-    while (ar->current) {
-        __TapkiChunk* next = ar->current->next;
-        if (!next) break;
+    __TapkiChunk* next = ar->current ? ar->current->next : NULL;
+    while (next) {
         ar->current = next;
-        if (next->cap > cap) {
-            return;
-        }
+        if (ar->current->cap > cap) return;
+        next = ar->current->next;
     }
-    __TapkiChunk* chunk = (__TapkiChunk*)malloc(sizeof(__TapkiChunk) + cap);
-    if (_TAPKI_UNLIKELY(!chunk)) TapkiDie("arena.chunk.new");
-    chunk->cap = cap;
-    if (ar->current) ar->current->next = chunk;
-    ar->current = chunk;
-    ar->current->next = NULL;
+    next = (__TapkiChunk*)malloc(sizeof(__TapkiChunk) + cap);
+    if (_TAPKI_UNLIKELY(!next)) TapkiDie("arena.chunk.new");
+    next->cap = cap;
+    next->next = NULL;
+    if (ar->current) ar->current->next = next;
+    ar->current = next;
 }
 
 TapkiArena *TapkiArenaCreate(size_t chunkSize)
@@ -216,29 +177,32 @@ TapkiArena *TapkiArenaCreate(size_t chunkSize)
     return arena;
 }
 
-static void* __tapki_zero(void* ptr, size_t size) {
-    memset(ptr, 0, size);
-    return ptr;
-}
-
 void *TapkiArenaAllocAligned(TapkiArena *arena, size_t size, size_t align)
 {
-    if (_TAPKI_UNLIKELY(size > arena->chunk_size)) {
-        __TapkiArenaNext(arena, size);
-        arena->ptr = size;
-        return __tapki_zero(arena->current->buff, size);
-    }
     size_t tail = arena->ptr & (align - 1);
     size_t aligned = tail ? arena->ptr + align - tail : arena->ptr;
     size_t end = aligned + size;
+    void* result;
     if (_TAPKI_UNLIKELY(end > arena->current->cap)) {
-        __TapkiArenaNext(arena, arena->chunk_size);
+        __TapkiArenaNext(arena, size > arena->chunk_size ? size : arena->chunk_size);
         arena->ptr = size;
-        return __tapki_zero(arena->current->buff, size);
+        result = arena->current->buff;
     } else {
         arena->ptr = end;
-        return __tapki_zero(arena->current->buff + aligned, size);
+        result = arena->current->buff + aligned;
     }
+    if (size) memset(result, 0, size);
+    return result;
+}
+
+void *TapkiArenaAlloc(TapkiArena *arena, size_t size)
+{
+    return TapkiArenaAllocAligned(arena, size, sizeof(void*)* 2);
+}
+
+char *TapkiArenaAllocChars(TapkiArena *arena, size_t count)
+{
+    return (char*)TapkiArenaAllocAligned(arena, count, 1);
 }
 
 void TapkiArenaClear(TapkiArena* arena)
@@ -257,6 +221,86 @@ void TapkiArenaFree(TapkiArena* arena)
     }
     free(arena);
 }
+
+char *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, size_t al)
+{
+    if (tsz == 1)
+        count++;
+    __TapkiVec* vec = (__TapkiVec*)_vec;
+    if (vec->cap <= count) {
+        uintptr_t arenaEnd = (uintptr_t)(ar->current->buff + ar->ptr);
+        uintptr_t vecEnd = (uintptr_t)(vec->data + vec->cap * tsz);
+        size_t ncap = vec->cap * 2;
+        vec->cap = (ncap < count ? count : ncap);
+        uintptr_t vecNewEnd = (uintptr_t)(vec->data + vec->cap * tsz);
+        uintptr_t arenaCap = (uintptr_t)(ar->current->buff + ar->current->cap);
+        // If we can just grow arena (vector is at the end of it) we do not relocate
+        if (arenaEnd == vecEnd && vecNewEnd < arenaCap) {
+            ar->ptr += (uintptr_t)(vecNewEnd - vecEnd);
+        } else {
+            char* newData = (char*)TapkiArenaAllocAligned(ar, vec->cap * tsz, al);
+            _TAPKI_MEMSET(newData, vec->data, vec->size * tsz);
+            vec->data = newData;
+        }
+    }
+    if (tsz == 1 && vec->data)
+        vec->data[count - 1] = 0;
+    return vec->data;
+}
+
+TapkiStr TapkiVF(TapkiArena *ar, const char *fmt, va_list list)
+{
+    va_list list2;
+    va_copy(list2, list);
+    size_t count = vsnprintf(NULL, 0, fmt, list);
+    TapkiStr result = __tapkis_withn(ar, count);
+    vsnprintf(result.data, result.cap, fmt, list2);
+    va_end(list2);
+    return result;
+}
+
+TapkiStr TapkiF(TapkiArena *ar, const char*__restrict__ fmt, ...)
+{
+    va_list vargs;
+    va_start(vargs, fmt);
+    TapkiStr result = TapkiVF(ar, fmt, vargs);
+    va_end(vargs);
+    return result;
+}
+
+TapkiStr TapkiS(TapkiArena *ar, const char *s)
+{
+    size_t len = strlen(s);
+    TapkiStr result = __tapkis_withn(ar, len);
+    _TAPKI_MEMSET(result.data, s, len);
+    return result;
+}
+
+void WriteFile(TapkiArena *ar, const char *file, const char *contents)
+{
+}
+
+void AppendFile(TapkiArena *ar, const char *file, const char *contents)
+{
+
+}
+
+TapkiStr ReadFile(TapkiArena *ar, const char *file)
+{
+    FILE* f = fopen(file, "rb");
+    if (!f)
+        TapkiDie(F(ar, "Could not open for read: %s => %s", file, strerror(errno)).data);
+    if (fseek(f, 0, SEEK_END))
+        TapkiDie(F(ar, "Could not seek file: %s => %s", file, strerror(errno)).data);
+    TapkiStr str = __tapkis_withn(ar, ftell(f));
+    fseek(f, 0, SEEK_SET);
+    fread(str.data, str.size, 1, f);
+    fclose(f);
+    return str;
+}
+
+
+#undef _TAPKI_MEMSET
 
 #ifdef __cplusplus
 }

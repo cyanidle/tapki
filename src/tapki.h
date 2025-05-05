@@ -3,6 +3,7 @@
 #define TAPKI_H
 
 #include <stddef.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -15,21 +16,25 @@ extern "C" {
 #define _TAPKI_NORETURN __attribute__((noreturn))
 #define _TAPKI_UNLIKELY(x) __builtin_expect(!!(x), 0)
 #define _TAPKI_ALLOC_ATTR(sz, al) __attribute__((malloc, alloc_size(sz), alloc_align(al)))
+#define _TAPKI_FMT_ATTR(fmt, args) __attribute__((format(printf, fmt, args)))
 #else
 #define _TAPKI_NORETURN __declspec(noreturn)
 #define _TAPKI_UNLIKELY(x) x
 #define _TAPKI_ALLOC_ATTR(sz, al)
+#define _TAPKI_FMT_ATTR(fmt, args)
 #endif
 
 // If TAPKI_FULL_NAMESPACE is not defined -> you can use Public API without Tapki prefix
 
 _TAPKI_NORETURN void TapkiDie(const char* msg);
+_TAPKI_FMT_ATTR(1, 2) _TAPKI_NORETURN void TapkiDieF(const char* __restrict__ fmt, ...);
 
 typedef struct TapkiArena TapkiArena;
 
 TapkiArena* TapkiArenaCreate(size_t chunkSize);
 _TAPKI_ALLOC_ATTR(2, 3) void* TapkiArenaAllocAligned(TapkiArena* arena, size_t size, size_t align);
-static inline void* TapkiArenaAlloc(TapkiArena* arena, size_t size) {return TapkiArenaAllocAligned(arena, size, sizeof(void*)* 2);}
+void* TapkiArenaAlloc(TapkiArena* arena, size_t size);
+char* TapkiArenaAllocChars(TapkiArena* arena, size_t count);
 void TapkiArenaClear(TapkiArena* arena);
 void TapkiArenaFree(TapkiArena* arena);
 
@@ -47,24 +52,32 @@ void TapkiArenaFree(TapkiArena* arena);
 void    TapkiVecClear(void* _vec);
 #define TapkiVecReserve(arena, vec, n) __tapki_vec_reserve((arena), (vec), n, TapkiVecSA(vec))
 
-typedef TapkiVec(char) TapkiString;
-typedef struct { const TapkiString key; TapkiString value; } TapkiStringPair;
-typedef TapkiVec(TapkiString) TapkiStringVec;
-typedef TapkiVec(TapkiStringPair) TapkiStringMap;
+typedef TapkiVec(char) TapkiStr;
+typedef struct { const TapkiStr key; TapkiStr value; } TapkiStrPair;
+typedef TapkiVec(TapkiStr) TapkiStrVec;
+typedef TapkiVec(TapkiStrPair) TapkiStrMap;
 
-#define TapkiNpos ((size_t)-1)
+#define Tapki_npos ((size_t)-1)
 #define TapkiStringAppend(arena, s, ...) __tapkis_append((arena), (s), __TapkiArr(const char*, __VA_ARGS__))
-void TapkiStringErase(TapkiString* target, size_t index);
-TapkiString TapkiStringSub(TapkiArena *ar, const char* target, size_t from, size_t to);
-size_t TapkiStringFind(const char* target, const char* what, size_t offset);
-TapkiStringVec TapkiStringSplit(TapkiArena *ar, const char* target, const char *delim);
+
+void TapkiStrErase(TapkiStr* target, size_t index);
+TapkiStr TapkiStrSub(TapkiArena *ar, const char* target, size_t from, size_t to);
+size_t TapkiStrFind(const char* target, const char* what, size_t offset);
+TapkiStrVec TapkiStrSplit(TapkiArena *ar, const char* target, const char *delim);
+_TAPKI_FMT_ATTR(2, 3) TapkiStr TapkiF(TapkiArena* ar, const char* __restrict__ fmt, ...);
+TapkiStr TapkiVF(TapkiArena* ar, const char* __restrict__ fmt, va_list list);
+TapkiStr TapkiS(TapkiArena* ar, const char* s);
+
+TapkiStr ReadFile(TapkiArena* ar, const char* file);
+void WriteFile(TapkiArena* ar, const char* file, const char* contents);
+void AppendFile(TapkiArena* ar, const char* file, const char* contents);
 
 #ifndef TAPKI_FULL_NAMESPACE
 typedef TapkiArena Arena;
-typedef TapkiString String;
-typedef TapkiStringPair StringPair;
-typedef TapkiStringMap StringMap;
-typedef TapkiStringVec StringVec;
+typedef TapkiStr Str;
+typedef TapkiStrPair StrPair;
+typedef TapkiStrMap StrMap;
+typedef TapkiStrVec StrVec;
 #define Vec             TapkiVec
 #define VecAppend       TapkiVecAppend
 #define VecPush         TapkiVecPush
@@ -79,14 +92,15 @@ typedef TapkiStringVec StringVec;
 #define ArenaAlloc      TapkiArenaAlloc
 #define ArenaClear      TapkiArenaClear
 #define ArenaFree       TapkiArenaFree
-#define Str             TapkiStr
-#define CStr            TapkiCStr
-#define StringAppend    TapkiStringAppend
-#define StringErase     TapkiStringErase
-#define StringSplit     TapkiStringSplit
-#define StringSub       TapkiStringSub
-#define StringFind      TapkiStringFind
-#define Npos            TapkiNpos
+#define F               TapkiF
+#define VF              TapkiVF
+#define S               TapkiS
+#define StrAppend       TapkiStrAppend
+#define StrErase        TapkiStrErase
+#define StrSplit        TapkiStrSplit
+#define StrSub          TapkiStrSub
+#define StrFind         TapkiStrFind
+#define npos            Tapki_npos
 #define Die             TapkiDie
 #endif
 
@@ -95,37 +109,17 @@ typedef TapkiStringVec StringVec;
 #define __TapkiArr(t, ...) (t[]){__VA_ARGS__}, PP_NARG(__VA_ARGS__)
 
 typedef struct {
-    int8_t* data;
+    char* data;
     size_t size;
     size_t cap;
 } __TapkiVec;
 
-#define TapkiCStr(arena, S) TapkiStr(arena, S).data
-#define TapkiStr(arena, S) _Generic(S, \
-    int: __tapkis_itos, \
-    unsigned int: __tapkis_utos, \
-    long: __tapkis_itos, \
-    unsigned long: __tapkis_utos, \
-    long long: __tapkis_itos, \
-    unsigned long long: __tapkis_utos, \
-    float: __tapkis_ftos, \
-    double: __tapkis_ftos, \
-    char*: __tapkis_stos, \
-    TapkiString*: __tapkis_pcopy \
-)((arena), (S))
-
-int8_t* __tapki_vec_reserve(TapkiArena* ar, void* _vec, size_t count, size_t tsz, size_t al);
+char *__tapki_vec_reserve(TapkiArena* ar, void* _vec, size_t count, size_t tsz, size_t al);
 void __tapki_vec_append(TapkiArena* ar, void* _vec, void* data, size_t count, size_t tsz, size_t al);
-TapkiString* __tapkis_append(TapkiArena *ar, TapkiString* target, const char **src, size_t count);
+TapkiStr* __tapkis_append(TapkiArena *ar, TapkiStr* target, const char **src, size_t count);
 void __tapki_vec_erase(void* _vec, size_t idx, size_t tsz);
 void __tapki_begin(int argc, const char** argv);
 void __tapki_end(void);
-
-TapkiString __tapkis_itos(TapkiArena *ar, long long i);
-TapkiString __tapkis_utos(TapkiArena *ar, unsigned long long u);
-TapkiString __tapkis_ftos(TapkiArena *ar, double f);
-TapkiString __tapkis_stos(TapkiArena *ar, const char* s);
-TapkiString __tapkis_pcopy(TapkiArena *ar, const TapkiString* str);
 
 static inline void* __tapki_vec_push(TapkiArena* ar, void* _vec, size_t tsz, size_t al) {
     __TapkiVec* vec = (__TapkiVec*)_vec;
