@@ -53,7 +53,7 @@ void TapkiArenaFree(TapkiArena* arena);
 #define TapkiVecAt(vec, idx)  ((TapkiVecT(vec)*)__tapki_vec_at((vec), idx))[idx]
 #define TapkiVecErase(vec, idx)  __tapki_vec_erase((vec), idx, TapkiVecS(vec))
 #define TapkiVecInsert(arena, vec, idx)  ((TapkiVecT(vec)*)__tapki_vec_insert((arena), (vec), idx, TapkiVecSA(vec)))
-#define TapkiVecForEach(vec, it) for (TapkiVecT(vec)* it = (vec)->data, __pinend = (vec)->data + (vec)->size; it && it != __pinend; ++it)
+#define TapkiVecForEach(vec, it) for (TapkiVecT(vec)* it = (vec)->data; it && it != (vec)->data + (vec)->size; ++it)
 void    TapkiVecClear(void* _vec);
 #define TapkiVecReserve(arena, vec, n) __tapki_vec_reserve((arena), (vec), n, TapkiVecSA(vec))
 
