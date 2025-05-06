@@ -44,6 +44,7 @@ void TapkiVecClear(void *_vec)
 {
     __TapkiVec* vec = (__TapkiVec*)_vec;
     vec->size = 0;
+    if (vec->data) vec->data[0] = 0;
 }
 
 static TapkiStr __tapkis_withn(TapkiArena* ar, size_t res) {
@@ -134,12 +135,6 @@ TapkiStrVec TapkiStrSplit(TapkiArena *ar, const char *target, const char *delim)
     }
 }
 
-void TapkiStrErase(TapkiStr *target, size_t index)
-{
-    TapkiVecErase(target, index);
-    target->data[target->size] = 0;
-}
-
 typedef struct __TapkiChunk {
     struct __TapkiChunk* next;
     size_t cap;
@@ -224,11 +219,23 @@ void TapkiArenaFree(TapkiArena* arena)
     free(arena);
 }
 
+void* __tapki_vec_insert(TapkiArena* ar, void* _vec, size_t idx, size_t tsz, size_t al)
+{
+    __TapkiVec* vec = (__TapkiVec*)_vec;
+    __tapki_vec_reserve(ar, vec, vec->size + 1, tsz, al);
+    size_t tail = vec->size++ - idx;
+    memmove(vec->data + (idx + 1) * tsz, vec->data + idx * tsz, tail * tsz);
+    if (tsz == 1) {
+        vec->data[vec->size - 1] = 0;
+    }
+    return vec->data + idx * tsz;
+}
+
 char *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, size_t al)
 {
+    __TapkiVec* vec = (__TapkiVec*)_vec;
     if (tsz == 1)
         count++;
-    __TapkiVec* vec = (__TapkiVec*)_vec;
     if (vec->cap <= count) {
         uintptr_t arenaEnd = (uintptr_t)(ar->current->buff + ar->ptr);
         uintptr_t vecEnd = (uintptr_t)(vec->data + vec->cap * tsz);
@@ -278,14 +285,48 @@ TapkiStr TapkiS(TapkiArena *ar, const char *s)
     return result;
 }
 
-TapkiStr *TapkiStrMapAt(TapkiArena *ar, TapkiStrMap *map)
-{
+static TapkiStrPair* __tpk_lower_bound(TapkiStrPair *begin, TapkiStrPair* end, const char* key) {
+    TapkiStrPair * it;
+    size_t count, step;
+    count = end - begin;
+    while (count > 0) {
+        it = begin;
+        step = count / 2;
+        it += step;
+        if (strcmp(it->key.data, key) < 0) {
+            begin = ++it;
+            count -= step + 1;
+        } else {
+            count = step;
+        }
+    }
+    return begin;
+}
 
+TapkiStr *TapkiStrMapAt(TapkiArena *ar, TapkiStrMap *map, const char* key)
+{
+    TapkiStrPair *end = map->data + map->size;
+    TapkiStrPair *it = __tpk_lower_bound(map->data, end, key);
+    if (it == end) {
+        TapkiStrPair* pushed = TapkiVecPush(ar, map);
+        *(TapkiStr*)&pushed->key = S(ar, key);
+        return &pushed->value;
+    } else if (strcmp(it->key.data, key) == 0) {
+        return &it->value;
+    } else {
+        TapkiStrPair* inserted = TapkiVecInsert(ar, map, it - map->data);
+        *(TapkiStr*)&inserted->key = S(ar, key);
+        return &inserted->value;
+    }
 }
 
 void TapkiStrMapErase(TapkiStrMap *map, const char *key)
 {
-
+    TapkiStrPair *it = __tpk_lower_bound(map->data, map->data + map->size, key);
+    if (strcmp(it->key.data, key) == 0) {
+        size_t idx = it - map->data;
+        TapkiVecErase(map, idx);
+    }
 }
 
 void TapkiWriteFile(const char *file, const char *contents)
