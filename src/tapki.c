@@ -111,9 +111,35 @@ TapkiStr TapkiStrSub(TapkiArena *ar, const char *target, size_t from, size_t to)
 
 size_t TapkiStrFind(const char *target, const char *what, size_t offset)
 {
+    if (!target) target = "";
+    if (!what) what = "";
     const char* found = strstr(target + offset, what);
     if (!found) return Tapki_npos;
     return (size_t)(found - target);
+}
+
+bool TapkiStrContains(const char *target, const char *what)
+{
+    if (!target) target = "";
+    if (!what) what = "";
+    return TapkiStrFind(target, what, 0) != Tapki_npos;
+}
+
+bool TapkiStrStartsWith(const char *target, const char *what)
+{
+    if (!target) target = "";
+    if (!what) what = "";
+    return TapkiStrFind(target, what, 0) == 0;
+}
+
+bool TapkiStrEndsWith(const char *target, const char *what)
+{
+    if (!target) target = "";
+    if (!what) what = "";
+    size_t tlen = strlen(target);
+    size_t wlen = strlen(what);
+    if (wlen > tlen) return false;
+    return TapkiStrFind(target, what, tlen - wlen);
 }
 
 TapkiStrVec TapkiStrSplit(TapkiArena *ar, const char *target, const char *delim)
@@ -224,9 +250,11 @@ void* __tapki_vec_insert(TapkiArena* ar, void* _vec, size_t idx, size_t tsz, siz
     __TapkiVec* vec = (__TapkiVec*)_vec;
     __tapki_vec_reserve(ar, vec, vec->size + 1, tsz, al);
     size_t tail = vec->size++ - idx;
-    memmove(vec->data + (idx + 1) * tsz, vec->data + idx * tsz, tail * tsz);
+    char* src = vec->data + idx * tsz;
+    char* dest = src + tsz;
+    memmove(dest, vec->data + idx * tsz, tail * tsz);
     if (tsz == 1) {
-        vec->data[vec->size - 1] = 0;
+        vec->data[vec->size] = 0;
     }
     return vec->data + idx * tsz;
 }
@@ -251,9 +279,9 @@ char *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, 
             _TAPKI_MEMSET(newData, vec->data, vec->size * tsz);
             vec->data = newData;
         }
+        if (tsz == 1 && vec->data)
+            vec->data[count - 1] = 0;
     }
-    if (tsz == 1 && vec->data)
-        vec->data[count - 1] = 0;
     return vec->data;
 }
 
@@ -285,6 +313,13 @@ TapkiStr TapkiS(TapkiArena *ar, const char *s)
     return result;
 }
 
+void TapkiStrAppend(TapkiArena *ar, TapkiStr *target, const char *part)
+{
+    size_t len = strlen(part);
+    TapkiVecReserve(ar, target, target->size + len);
+    _TAPKI_MEMSET(target->data + target->size, part, len);
+}
+
 static TapkiStrPair* __tpk_lower_bound(TapkiStrPair *begin, TapkiStrPair* end, const char* key) {
     TapkiStrPair * it;
     size_t count, step;
@@ -309,13 +344,13 @@ TapkiStr *TapkiStrMapAt(TapkiArena *ar, TapkiStrMap *map, const char* key)
     TapkiStrPair *it = __tpk_lower_bound(map->data, end, key);
     if (it == end) {
         TapkiStrPair* pushed = TapkiVecPush(ar, map);
-        *(TapkiStr*)&pushed->key = S(ar, key);
+        *(TapkiStr*)&pushed->key = TapkiS(ar, key);
         return &pushed->value;
     } else if (strcmp(it->key.data, key) == 0) {
         return &it->value;
     } else {
         TapkiStrPair* inserted = TapkiVecInsert(ar, map, it - map->data);
-        *(TapkiStr*)&inserted->key = S(ar, key);
+        *(TapkiStr*)&inserted->key = TapkiS(ar, key);
         return &inserted->value;
     }
 }
@@ -329,27 +364,61 @@ void TapkiStrMapErase(TapkiStrMap *map, const char *key)
     }
 }
 
+static FILE* __tpk_open(const char* file, const char* mode, const char* comment) {
+    FILE* f = fopen(file, mode);
+    if (!f) {
+        TapkiDieF("Could not open for %s: %s => %s\n", comment, file, strerror(errno));\
+    }
+    return f;
+}
+
 void TapkiWriteFile(const char *file, const char *contents)
 {
+    FILE* f = __tpk_open(file, "wb", "write");
+    fwrite(contents, strlen(contents), 1, f);
+    fclose(f);
 }
 
 void TapkiAppendFile(const char *file, const char *contents)
 {
-
+    FILE* f = __tpk_open(file, "ab", "append");
+    fwrite(contents, strlen(contents), 1, f);
+    fclose(f);
 }
 
-TapkiCLI TapkiParseCLI(TapkiArena *ar, int argc, const char * const *argv)
+TapkiCLIVarsResult TapkiCLI_ParseVars(TapkiArena *ar, TapkiCLI cli[], int argc, char** argv)
 {
-    TapkiCLI res = {0};
+    TapkiCLIVarsResult res = {0};
 
     return res;
 }
 
+
+TapkiStr TapkiCLI_Help(TapkiArena *ar, TapkiCLI cli[])
+{
+
+}
+
+TapkiStr TapkiCLI_Usage(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv)
+{
+
+}
+
+int TapkiParseCLI(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv)
+{
+    TapkiCLIVarsResult result = TapkiCLI_ParseVars(ar, cli, argc, argv);
+    if (!result.ok) {
+        fprintf(stderr, "%s\n", C(result.error));
+        fprintf(stderr, "Usage: %s\n", C(TapkiCLI_Usage(ar, cli, argc, argv)));
+        fprintf(stderr, "%s\n", C(TapkiCLI_Help(ar, cli)));
+        return 1;
+    }
+    return 0;
+}
+
 TapkiStr TapkiReadFile(TapkiArena *ar, const char *file)
 {
-    FILE* f = fopen(file, "rb");
-    if (!f)
-        TapkiDieF("Could not open for read: %s => %s\n", file, strerror(errno));
+    FILE* f = __tpk_open(file, "rb", "read");
     if (fseek(f, 0, SEEK_END))
         TapkiDieF("Could not seek file: %s => %s\n", file, strerror(errno));
     TapkiStr str = __tapkis_withn(ar, ftell(f));
@@ -357,6 +426,23 @@ TapkiStr TapkiReadFile(TapkiArena *ar, const char *file)
     fread(str.data, str.size, 1, f);
     fclose(f);
     return str;
+}
+
+#ifdef _WIN32
+static char __tpk_sep = '\\'
+#else
+static char __tpk_sep = '/';
+#endif
+
+TapkiStr __tpk_path_join(TapkiArena *ar, const char **parts, size_t count)
+{
+    TapkiStr res = {0};
+    for (size_t i = 0; i < count; ++i) {
+        const char* part = parts[i];
+        TapkiStrAppend(ar, &res, part);
+        TapkiVecAppend(ar, &res, __tpk_sep);
+    }
+    return res;
 }
 
 
