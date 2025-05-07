@@ -439,8 +439,10 @@ TapkiStr __tpk_path_join(TapkiArena *ar, const char **parts, size_t count)
     TapkiStr res = {0};
     for (size_t i = 0; i < count; ++i) {
         const char* part = parts[i];
+        if (i) {
+            TapkiVecAppend(ar, &res, __tpk_sep);
+        }
         TapkiStrAppend(ar, &res, part);
-        TapkiVecAppend(ar, &res, __tpk_sep);
     }
     return res;
 }
