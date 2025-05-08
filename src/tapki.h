@@ -7,31 +7,31 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #ifdef __GNUC__
-    #define _TAPKI_NORETURN __attribute__((noreturn))
-    #define _TAPKI_UNLIKELY(x) __builtin_expect(!!(x), 0)
+    #define TAPKI_NORETURN __attribute__((noreturn))
+    #define TAPKI_UNLIKELY(x) __builtin_expect(!!(x), 0)
     #define _TAPKI_ALLOC_ATTR(sz, al) __attribute__((malloc, alloc_size(sz), alloc_align(al)))
     #define _TAPKI_FMT_ATTR(fmt, args) __attribute__((format(printf, fmt, args)))
 #else
     #if defined(_MSC_VER)
-        #define _TAPKI_NORETURN __declspec(noreturn)
+        #define TAPKI_NORETURN __declspec(noreturn)
     #else
-        #define _TAPKI_NORETURN
+        #define TAPKI_NORETURN
     #endif
-    #define _TAPKI_UNLIKELY(x) x
+    #define TAPKI_UNLIKELY(x) x
     #define _TAPKI_ALLOC_ATTR(sz, al)
     #define _TAPKI_FMT_ATTR(fmt, args)
 #endif
 
 // If TAPKI_FULL_NAMESPACE is not defined -> you can use Public API without Tapki prefix
 
-_TAPKI_NORETURN void TapkiDie(const char* msg);
-_TAPKI_FMT_ATTR(1, 2) _TAPKI_NORETURN void TapkiDieF(const char* __restrict__ fmt, ...);
+_TAPKI_FMT_ATTR(1, 2) TAPKI_NORETURN void TapkiDie(const char* __restrict__ fmt, ...);
 
 typedef struct TapkiArena TapkiArena;
 
@@ -49,7 +49,7 @@ void TapkiArenaFree(TapkiArena* arena);
 #define TapkiVecSA(vec) TapkiVecS(vec), TapkiVecA(vec)
 #define TapkiVecAppend(arena, vec, ...) __tapki_vec_append((arena), (vec), __TapkiArr(TapkiVecT(vec), __VA_ARGS__), TapkiVecSA(vec))
 #define TapkiVecPush(arena, vec) ((TapkiVecT(vec)*)__tapki_vec_push((arena), (vec), TapkiVecSA(vec)))
-#define TapkiVecPop(vec)  *((TapkiVecT(vec)*)__tapki_vec_pop((vec)))
+#define TapkiVecPop(vec)  ((TapkiVecT(vec)*)__tapki_vec_pop((vec), TapkiVecS(vec)))
 #define TapkiVecAt(vec, idx)  ((TapkiVecT(vec)*)__tapki_vec_at((vec), idx))[idx]
 #define TapkiVecErase(vec, idx)  __tapki_vec_erase((vec), idx, TapkiVecS(vec))
 #define TapkiVecInsert(arena, vec, idx)  ((TapkiVecT(vec)*)__tapki_vec_insert((arena), (vec), idx, TapkiVecSA(vec)))
@@ -77,6 +77,12 @@ TapkiStr TapkiVF(TapkiArena* ar, const char* __restrict__ fmt, va_list list);
 TapkiStr TapkiS(TapkiArena* ar, const char* s);
 #define TapkiC(str) (str).data
 
+int32_t TapkiToI32(const char* s);
+uint32_t TapkiToU32(const char* s);
+int64_t TapkiToI64(const char* s);
+uint64_t TapkiToU64(const char* s);
+double TapkiToFloat(const char* s);
+
 TapkiStr* TapkiStrMapAt(TapkiArena *ar, TapkiStrMap* map, const char* key);
 void TapkiStrMapErase(TapkiStrMap* map, const char* key);
 
@@ -86,15 +92,31 @@ void TapkiAppendFile(const char* file, const char* contents);
 
 #define TapkiPathJoin(arena, ...) __tpk_path_join(arena, __TapkiArr(const char*, __VA_ARGS__))
 
+// Tracebacks
+
+// todo: fill va_list somehow
+#define TapkiFrameF1(fmt, N, ...) \
+    for(void* __vargs[N + 1] = {__VA_ARGS__}; false ? printf(fmt, ##__VA_ARGS__) : !__vargs[N]; __vargs[N] = (void*)1) \
+    for(__tpk_scope __scope = {0, fmt, N, __vargs}; __TapkiFrameStart(&__scope), !__scope.f; __tpk_frame_end(), __scope.f = 1)
+#define TapkiFrameF(fmt, ...) TapkiFrameF1(fmt, PP_NARG(__VA_ARGS__), ##__VA_ARGS__)
+#define TapkiFrame() TapkiFrameF(NULL)
+#define TapkiFramesIter(frame) TapkiVecForEach(&__tpk_gframes.frames, frame)
+TapkiStr TapkiTraceback(TapkiArena* arena);
+
+// CLI
+
 typedef struct TapkiCLIVarsResult {
     bool ok;
     TapkiStr error;
 } TapkiCLIVarsResult;
 
 enum {
-    TapkiCLIFlag        = 1, // option is treated as flag
-    TapkiCLIRequired    = 2, // option is required
-    TapkiCLIAppend      = 4, // option allows multiple entries
+    TAPKI_CLI_FLAG        = 1 << 0, // option is treated as flag
+    TAPKI_CLI_REQUIRED    = 1 << 1, // option is required
+    TAPKI_CLI_MANY        = 1 << 2, // option allows multiple entries
+    TAPKI_CLI_FLOAT       = 1 << 3, // value type is float (not str)
+    TAPKI_CLI_U64         = 1 << 4, // value type is u64 (not str)
+    TAPKI_CLI_I64         = 1 << 4, // value type is i64 (not str)
 };
 
 typedef struct TapkiCLI {
@@ -153,18 +175,26 @@ typedef TapkiCLI CLI;
 #define StrMapAt(map, key)              TapkiStrMapAt(arena, map, key)
 #define StrMapErase(map, key)           TapkiStrMapErase(arena, map, key)
 #define npos                            Tapki_npos
-#define Die(msg)                        TapkiDie(msg)
-#define DieF(fmt, ...)                  TapkiDieF(fmt, ##__VA_ARGS__)
+#define Die(fmt, ...)                   TapkiDie(fmt, ##__VA_ARGS__)
 #define WriteFile(file, data)           TapkiWriteFile(file, data)
 #define AppendFile(file, data)          TapkiAppendFile(file, data)
 #define ReadFile(file)                  TapkiReadFile(arena, file)
 #define ParseCLI(cli, argc, argv)       TapkiParseCLI(arena, cli, argc, argv)
 #define PathJoin(...)                   TapkiPathJoin(arena, __VA_ARGS__)
 
+#define FrameF(fmt, ...)                TapkiFrameF(fmt, ##__VA_ARGS__)
+#define Frame()                         TapkiFrame()
+#define PrinterInt                      TapkiPrinterInt
+#define PrinterStr                      TapkiPrinterStr
+#define Traceback()                     TapkiTraceback(arena)
+
 enum {
-    CLIFlag = TapkiCLIFlag,
-    CLIRequired = TapkiCLIRequired,
-    CLIAppend = TapkiCLIAppend,
+    CLI_FLAG = TAPKI_CLI_FLAG,
+    CLI_REQUIRED = TAPKI_CLI_REQUIRED,
+    CLI_MANY = TAPKI_CLI_MANY,
+    CLI_FLOAT = TAPKI_CLI_FLOAT,
+    CLI_I64 = TAPKI_CLI_I64,
+    CLI_U64 = TAPKI_CLI_U64,
 };
 
 #endif
@@ -197,6 +227,38 @@ void __tapki_vec_append(TapkiArena* ar, void* _vec, void* data, size_t count, si
 TapkiStr* __tapkis_append(TapkiArena *ar, TapkiStr* target, const char **src, size_t count);
 void __tapki_vec_erase(void* _vec, size_t idx, size_t tsz);
 
+#define __TPK_STR2(x) #x
+#define __TPK_STR(x) __TPK_STR2(x)
+
+#ifdef _MSC_VER
+#define __PRETTY_FUNCTION__ __FUNCSIG__
+#endif
+
+typedef struct {
+    int f;
+    const char* fmt;
+    size_t n;
+    void* vargs;
+} __tpk_scope;
+
+void __tpk_frame_start(const char* loc, const char* func, const __tpk_scope* scope);
+#define __TapkiFrameStart(scope) __tpk_frame_start(__FILE__":"__TPK_STR(__LINE__), __PRETTY_FUNCTION__, scope)
+void __tpk_frame_end();
+
+typedef struct __tpk_frame {
+    const char* loc;
+    const char* func;
+    const __tpk_scope* scope;
+} __tpk_frame;
+
+typedef struct __tpk_frames {
+    TapkiVec(__tpk_frame) frames;
+    TapkiArena* arena;
+} __tpk_frames;
+
+extern _Thread_local __tpk_frames __tpk_gframes;
+
+
 static inline void* __tapki_vec_push(TapkiArena* ar, void* _vec, size_t tsz, size_t al) {
     __TapkiVec* vec = (__TapkiVec*)_vec;
     return (vec->size >= vec->cap ? __tapki_vec_reserve(ar, vec, vec->cap + 1, tsz, al) : vec->data) + (vec->size++ * tsz);
@@ -210,7 +272,7 @@ static inline void* __tapki_vec_pop(void* _vec, size_t tsz) {
 
 static inline void* __tapki_vec_at(void* _vec, size_t pos, size_t tsz) {
     __TapkiVec* vec = (__TapkiVec*)_vec;
-    if (vec->size <= pos) TapkiDieF("vector.at: index(%zu) > size(%zu)", pos, vec->size);
+    if (vec->size <= pos) TapkiDie("vector.at: index(%zu) > size(%zu)", pos, vec->size);
     return vec->data;
 }
 

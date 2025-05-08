@@ -3,7 +3,6 @@
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
-#include <stdarg.h>
 #include <string.h>
 
 #ifdef __cplusplus
@@ -12,11 +11,31 @@ extern "C" {
 
 #define _TAPKI_MEMSET(dest, src, count) if (src && count) memcpy(dest, src, count)
 
+_Thread_local __tpk_frames __tpk_gframes;
+
+void __tpk_frame_start(const char* loc, const char* func, const __tpk_scope* scope)
+{
+    struct __tpk_frames* frames = &__tpk_gframes;
+    if (TAPKI_UNLIKELY(!frames->arena)) {
+        frames->arena = TapkiArenaCreate(1024);
+    }
+    __tpk_frame* fr = TapkiVecPush(frames->arena, &frames->frames);
+    fr->loc = loc;
+    fr->func = func;
+    fr->scope = scope;
+}
+
+void __tpk_frame_end()
+{
+    struct __tpk_frames* frames = &__tpk_gframes;
+    TapkiVecPop(&frames->frames);
+}
+
 void __tapki_vec_erase(void *_vec, size_t idx, size_t tsz)
 {
     __TapkiVec* vec = (__TapkiVec*)_vec;
-    if (_TAPKI_UNLIKELY(vec->size <= idx))
-        TapkiDieF("vector.erase: index(%zu) > size(%zu)", idx, vec->size);
+    if (TAPKI_UNLIKELY(vec->size <= idx))
+        TapkiDie("vector.erase: index(%zu) > size(%zu)", idx, vec->size);
     size_t tail = (--vec->size) - idx;
     if (tail) {
         memmove(vec->data + idx * tsz, vec->data + (idx + 1) * tsz, tail * tsz);
@@ -25,19 +44,45 @@ void __tapki_vec_erase(void *_vec, size_t idx, size_t tsz)
         vec->data[vec->size] = 0;
 }
 
-void TapkiDie(const char *msg)
+TapkiStr TapkiTraceback(TapkiArena *arena)
 {
-    fprintf(stderr, "TAPKI: FATAL: %s", msg);
-    fflush(stderr);
-    abort();
+    TapkiStr result = TapkiS(arena, "Traceback (most recent on top):\n");
+    int longest = 0;
+    TapkiFramesIter(frame) {
+        int len = strlen(frame->loc);
+        if (len > longest) longest = len;
+    }
+    TapkiFramesIter(frame) {
+        TapkiStr msg = TapkiF(arena, "  in %-*s '%s'", longest, frame->loc, frame->func);
+        TapkiStrAppend(arena, &result, C(msg));
+        // todo: print context
+        TapkiVecAppend(arena, &result, '\n');
+    }
+    return result;
 }
 
-void TapkiDieF(const char *fmt, ...)
+static bool __tpk_inside_die = false;
+void TapkiDie(const char *fmt, ...)
 {
-    TapkiArena* a = TapkiArenaCreate(1024);
-    va_list vargs;
-    va_start(vargs, fmt);
-    TapkiDie(TapkiVF(a, fmt, vargs).data);
+    if (__tpk_inside_die) {
+        fputs("Recursive Die()! Out of memory?\n", stderr);
+        fflush(stderr);
+        exit(1);
+    }
+    __tpk_inside_die = true;
+    fputs("Fatal Error: ", stderr);
+    { //user msg
+        va_list vargs;
+        va_start(vargs, fmt);
+        vfprintf(stderr, fmt, vargs);
+        va_end(vargs);
+        fputc('\n', stderr);
+    }
+    TapkiArena* arena = TapkiArenaCreate(1024);
+    fputs(TapkiC(TapkiTraceback(arena)), stderr);
+    fputc('\n', stderr);
+    fflush(stderr);
+    exit(1);
 }
 
 void TapkiVecClear(void *_vec)
@@ -182,7 +227,7 @@ static void __TapkiArenaNext(TapkiArena* ar, size_t cap) {
         next = ar->current->next;
     }
     next = (__TapkiChunk*)malloc(sizeof(__TapkiChunk) + cap);
-    if (_TAPKI_UNLIKELY(!next)) TapkiDie("arena.chunk.new");
+    if (TAPKI_UNLIKELY(!next)) TapkiDie("arena.chunk.new");
     next->cap = cap;
     next->next = NULL;
     if (ar->current) ar->current->next = next;
@@ -192,7 +237,7 @@ static void __TapkiArenaNext(TapkiArena* ar, size_t cap) {
 TapkiArena *TapkiArenaCreate(size_t chunkSize)
 {
     TapkiArena* arena = (TapkiArena*)malloc(sizeof(TapkiArena));
-    if (_TAPKI_UNLIKELY(!arena)) TapkiDie("arena.new");
+    if (TAPKI_UNLIKELY(!arena)) TapkiDie("arena.new");
     *arena = (TapkiArena){};
     arena->chunk_size = chunkSize;
     __TapkiArenaNext(arena, chunkSize);
@@ -206,7 +251,7 @@ void *TapkiArenaAllocAligned(TapkiArena *arena, size_t size, size_t align)
     size_t aligned = tail ? arena->ptr + align - tail : arena->ptr;
     size_t end = aligned + size;
     void* result;
-    if (_TAPKI_UNLIKELY(end > arena->current->cap)) {
+    if (TAPKI_UNLIKELY(end > arena->current->cap)) {
         __TapkiArenaNext(arena, size > arena->chunk_size ? size : arena->chunk_size);
         arena->ptr = size;
         result = arena->current->buff;
@@ -367,7 +412,7 @@ void TapkiStrMapErase(TapkiStrMap *map, const char *key)
 static FILE* __tpk_open(const char* file, const char* mode, const char* comment) {
     FILE* f = fopen(file, mode);
     if (!f) {
-        TapkiDieF("Could not open for %s: %s => %s\n", comment, file, strerror(errno));\
+        TapkiDie("Could not open for %s: %s => %s\n", comment, file, strerror(errno));\
     }
     return f;
 }
@@ -386,6 +431,54 @@ void TapkiAppendFile(const char *file, const char *contents)
     fclose(f);
 }
 
+double TapkiToFloat(const char *s)
+{
+    char* end;
+    double res = strtod(s, &end);
+    if (TAPKI_UNLIKELY(*end != 0)) {
+        TapkiDie("Could fully not convert to double: %s", s);
+    }
+    return res;
+}
+
+uint64_t TapkiToU64(const char *s)
+{
+    char* end;
+    uint64_t res = strtoull(s, &end, 10);
+    if (TAPKI_UNLIKELY(*end != 0)) {
+        TapkiDie("Could fully not convert to u64: %s", s);
+    }
+    return res;
+}
+
+int64_t TapkiToI64(const char *s)
+{
+    char* end;
+    int64_t res = strtoll(s, &end, 10);
+    if (TAPKI_UNLIKELY(*end != 0)) {
+        TapkiDie("Could fully not convert to u64: %s", s);
+    }
+    return res;
+}
+
+uint32_t TapkiToU32(const char *s)
+{
+    uint64_t res = TapkiToI64(s);
+    if (TAPKI_UNLIKELY(res > UINT32_MAX)) {
+        TapkiDie("Integer is too big for u32: %s", s);
+    }
+    return (uint32_t)res;
+}
+
+int32_t TapkiToI32(const char *s)
+{
+    int64_t res = TapkiToI64(s);
+    if (TAPKI_UNLIKELY(res > INT32_MAX)) {
+        TapkiDie("Integer is too big for i32: %s", s);
+    }
+    return (int32_t)res;
+}
+
 TapkiCLIVarsResult TapkiCLI_ParseVars(TapkiArena *ar, TapkiCLI cli[], int argc, char** argv)
 {
     TapkiCLIVarsResult res = {0};
@@ -401,7 +494,8 @@ TapkiStr TapkiCLI_Help(TapkiArena *ar, TapkiCLI cli[])
 
 TapkiStr TapkiCLI_Usage(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv)
 {
-
+    TapkiStr result = TapkiS(ar, argv[0]);
+    TapkiStrAppend(ar, &result, ": ");
 }
 
 int TapkiParseCLI(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv)
@@ -420,7 +514,7 @@ TapkiStr TapkiReadFile(TapkiArena *ar, const char *file)
 {
     FILE* f = __tpk_open(file, "rb", "read");
     if (fseek(f, 0, SEEK_END))
-        TapkiDieF("Could not seek file: %s => %s\n", file, strerror(errno));
+        TapkiDie("Could not seek file: %s => %s\n", file, strerror(errno));
     TapkiStr str = __tapkis_withn(ar, ftell(f));
     fseek(f, 0, SEEK_SET);
     fread(str.data, str.size, 1, f);

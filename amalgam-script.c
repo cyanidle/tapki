@@ -1,6 +1,11 @@
 ﻿#include "src/tapki.c"
 
 int main(int argc, char** argv) {
+    Frame() {
+        FrameF("Context!") {
+            Die("OMG NO!!!");
+        }
+    }
     Arena* arena = ArenaCreate(1024 * 20);
     Str base_dir = S(".");
     CLI cli[] = {
