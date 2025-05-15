@@ -98,6 +98,7 @@ TapkiMapDeclare(TapkiStrMap, char*, TapkiStr);
 TapkiStr TapkiStrSub(TapkiArena *ar, const char* target, size_t from, size_t to);
 void TapkiStrAppend(TapkiArena *ar, TapkiStr* target, const char* part);
 size_t TapkiStrFind(const char* target, const char* what, size_t offset);
+size_t TapkiStrRevFind(const char* target, const char* what);
 bool TapkiStrContains(const char* target, const char* what);
 bool TapkiStrStartsWith(const char* target, const char* what);
 bool TapkiStrEndsWith(const char* target, const char* what);
@@ -203,6 +204,7 @@ typedef TapkiCLI CLI;
 #define StrSplit(s, delim)              TapkiStrSplit(arena, s, delim)
 #define StrSub(s, from, to)             TapkiStrSub(arena, s, from, to)
 #define StrFind(s, needle, offs)        TapkiStrFind(s, needle, offs)
+#define StrRevFind(s, needle)           TapkiStrRevFind(s, needle)
 #define StrContains(s, needle)          TapkiStrContains(s, needle)
 #define StrStartsWith(s, needle)        TapkiStrStartsWith(s, needle)
 #define StrEndsWith(s, needle)          TapkiStrEndsWith(s, needle)

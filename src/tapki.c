@@ -9,6 +9,13 @@
 extern "C" {
 #endif
 
+
+#ifdef _WIN32
+static const char* __tpk_sep = "\\"
+#else
+static const char* __tpk_sep = "/";
+#endif
+
 #define _TAPKI_MEMSET(dest, src, count) if (src && count) memcpy(dest, src, count)
 
 _Thread_local __tpk_frames __tpk_gframes;
@@ -160,6 +167,21 @@ TapkiStr TapkiStrSub(TapkiArena *ar, const char *target, size_t from, size_t to)
     return res;
 }
 
+/* By liw. */
+static const char *__rev_strstr(const char *haystack, const char *needle) {
+    if (*needle == '\0')
+        return (char *) haystack;
+    char *result = NULL;
+    for (;;) {
+        char *p = strstr(haystack, needle);
+        if (p == NULL)
+            break;
+        result = p;
+        haystack = p + 1;
+    }
+    return result;
+}
+
 size_t TapkiStrFind(const char *target, const char *what, size_t offset)
 {
     if (!target) target = "";
@@ -167,6 +189,14 @@ size_t TapkiStrFind(const char *target, const char *what, size_t offset)
     const char* found = strstr(target + offset, what);
     if (!found) return Tapki_npos;
     return (size_t)(found - target);
+}
+
+size_t TapkiStrRevFind(const char *target, const char *what)
+{
+    if (!target) target = "";
+    if (!what) what = "";
+    const char* found = __rev_strstr(target, what);
+    return found ? (size_t)(found - target) : Tapki_npos;
 }
 
 bool TapkiStrContains(const char *target, const char *what)
@@ -577,7 +607,8 @@ static TapkiStr __TapkiCLI_Help(TapkiArena *ar, const __tpk_cli_context* ctx)
 
 static TapkiStr __TapkiCLI_Usage(TapkiArena *ar, const __tpk_cli_context* ctx, int argc, char **argv)
 {
-    TapkiStr result = TapkiS(ar, argv[0]);
+    size_t offset = TapkiStrRevFind(argv[0], __tpk_sep);
+    TapkiStr result = TapkiS(ar, argv[0] + (offset == Tapki_npos ? 0 : offset + 1));
     TapkiStrAppend(ar, &result, ": ");
     //todo:
     return result;
@@ -631,19 +662,13 @@ TapkiStr TapkiReadFile(TapkiArena *ar, const char *file)
     return str;
 }
 
-#ifdef _WIN32
-static char __tpk_sep = '\\'
-#else
-static char __tpk_sep = '/';
-#endif
-
 TapkiStr __tpk_path_join(TapkiArena *ar, const char **parts, size_t count)
 {
     TapkiStr res = {0};
     for (size_t i = 0; i < count; ++i) {
         const char* part = parts[i];
         if (i) {
-            TapkiVecAppend(ar, &res, __tpk_sep);
+            TapkiVecAppend(ar, &res, *__tpk_sep);
         }
         TapkiStrAppend(ar, &res, part);
     }
