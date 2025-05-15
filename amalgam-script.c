@@ -1,23 +1,46 @@
 ﻿#include "src/tapki.c"
 
-int main(int argc, char** argv) {
-    Frame() {
-        FrameF("Context!") {
-            Die("OMG NO!!!");
-        }
+#define ASSERT(...) Frame() { if (!(__VA_ARGS__)) Die("Test failed: " #__VA_ARGS__); } (void)0
+
+void test_maps(Arena* arena) {
+    StrMap map = {0};
+    *StrMap_At(&map, "Kek") = S("Lol");
+    *StrMap_At(&map, "1") = S("1");
+    *StrMap_At(&map, "2") = S("2");
+    *StrMap_At(&map, "3") = S("3");
+    ASSERT(map.size == 4);
+    StrMap_Erase(&map, "2");
+    ASSERT(map.size == 3);
+    ASSERT(strcmp(StrMap_Find(&map, "3")->d, "3") == 0);
+    ASSERT(strcmp(StrMap_Find(&map, "Kek")->d, "Lol") == 0);
+    ASSERT(!StrMap_Find(&map, "2"));
+    ASSERT(false);
+    Str* kek = StrMap_At(&map, "Kek");
+    StrAppend(kek, "Kek");
+    ASSERT(strcmp(StrMap_Find(&map, "Kek")->d, "LolKek") == 0);
+}
+
+void test(Arena* arena) {
+    FrameF("Maps") {
+        test_maps(arena);
     }
+}
+
+int main(int argc, char** argv) {
     Arena* arena = ArenaCreate(1024 * 20);
+    test(arena);
     Str base_dir = S(".");
     CLI cli[] = {
         {"dir", &base_dir},
+        {"--test", &base_dir, .flag = true},
         {0},
     };
     int ret = ParseCLI(cli, argc, argv);
     if (ret != 0) {
         goto end;
     }
-    Str header = ReadFile(C(PathJoin(C(base_dir), "src/tapki.h")));
-    Str source = ReadFile(C(PathJoin(C(base_dir), "src/tapki.c")));
+    Str header = ReadFile(PathJoin(base_dir.d, "src/tapki.h").d);
+    Str source = ReadFile(PathJoin(base_dir.d, "src/tapki.c").d);
 end:
     ArenaFree(arena);
     return ret;
