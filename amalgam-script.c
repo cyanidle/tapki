@@ -2,7 +2,7 @@
 
 #define ASSERT(...) Frame() { if (!(__VA_ARGS__)) Die("Test failed: " #__VA_ARGS__); } (void)0
 
-void test_maps(Arena* arena) {
+void Test_Maps(Arena* arena) {
     StrMap map = {0};
     *StrMap_At(&map, "Kek") = S("Lol");
     *StrMap_At(&map, "1") = S("1");
@@ -14,21 +14,22 @@ void test_maps(Arena* arena) {
     ASSERT(strcmp(StrMap_Find(&map, "3")->d, "3") == 0);
     ASSERT(strcmp(StrMap_Find(&map, "Kek")->d, "Lol") == 0);
     ASSERT(!StrMap_Find(&map, "2"));
-    ASSERT(false);
     Str* kek = StrMap_At(&map, "Kek");
     StrAppend(kek, "Kek");
     ASSERT(strcmp(StrMap_Find(&map, "Kek")->d, "LolKek") == 0);
 }
 
-void test(Arena* arena) {
-    FrameF("Maps") {
-        test_maps(arena);
+void test() {
+    Frame() {
+        Arena* arena = ArenaCreate(1024 * 20);
+        Test_Maps(arena);
+        ArenaFree(arena);
     }
 }
 
 int main(int argc, char** argv) {
     Arena* arena = ArenaCreate(1024 * 20);
-    test(arena);
+    test();
     Str base_dir = S(".");
     CLI cli[] = {
         {"dir", &base_dir},

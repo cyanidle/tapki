@@ -31,8 +31,11 @@ extern "C" {
 
 // If TAPKI_FULL_NAMESPACE is not defined -> you can use Public API without Tapki prefix
 
-_TAPKI_FMT_ATTR(1, 2) TAPKI_NORETURN void TapkiDie(const char* __restrict__ fmt, ...);
+_TAPKI_FMT_ATTR(1, 2) TAPKI_NORETURN
+void TapkiDie(const char* __restrict__ fmt, ...);
+#define TapkiAssert(...) TapkiFrame() { if (!(__VA_ARGS__)) Die("Assertion failed: " #__VA_ARGS__); }
 
+// --- Arena
 typedef struct TapkiArena TapkiArena;
 
 TapkiArena* TapkiArenaCreate(size_t chunkSize);
@@ -41,7 +44,9 @@ void* TapkiArenaAlloc(TapkiArena* arena, size_t size);
 char* TapkiArenaAllocChars(TapkiArena* arena, size_t count);
 void TapkiArenaClear(TapkiArena* arena);
 void TapkiArenaFree(TapkiArena* arena);
+// ---
 
+// --- Vectors
 #define TapkiVec(type) struct { type* d; size_t size; size_t cap; }
 #define TapkiVecT(vec) __typeof__(*(vec)->d)
 #define TapkiVecS(vec) sizeof(*(vec)->d)
@@ -60,7 +65,9 @@ void    TapkiVecClear(void* _vec);
 
 typedef TapkiVec(char) TapkiStr;
 typedef TapkiVec(TapkiStr) TapkiStrVec;
+// ---
 
+// --- Maps
 #define TapkiMapDeclare(Name, K, V) \
     typedef struct{ const K key; V value; } Name##_Pair; \
     typedef TapkiVec(Name##_Pair) Name; \
@@ -75,9 +82,16 @@ typedef TapkiVec(TapkiStr) TapkiStrVec;
 
 TapkiMapDeclare(TapkiStrMap, char*, TapkiStr);
 
-// #define TapkiMapImplement(Name, Less, Eq)
-#define TapkiMapImplementTrivial(Name) TapkiMapImplement(__TPK_LESS, __TPK_EQ)
+#define TapkiMapImplement(Name, Less, Eq) TapkiMapImplement1(Name, Less, Eq)
 
+#define TAPKI_TRIVIAL_LESS(l, r) l < r
+#define TAPKI_TRIVIAL_EQ(l, r) l == r
+
+#define TAPKI_STRING_LESS(l, r) strcmp(l, r) < 0
+#define TAPKI_STRING_EQ(l, r) strcmp(l, r) == 0
+// ---
+
+// --- Strings
 #define Tapki_npos ((size_t)-1)
 #define TapkiStringAppend(arena, s, ...) __tapkis_append((arena), (s), __TapkiArr(const char*, __VA_ARGS__))
 
@@ -97,25 +111,28 @@ uint32_t TapkiToU32(const char* s);
 int64_t TapkiToI64(const char* s);
 uint64_t TapkiToU64(const char* s);
 double TapkiToFloat(const char* s);
+// ---
 
+// --- Files
 TapkiStr TapkiReadFile(TapkiArena* ar, const char* file);
 void TapkiWriteFile(const char* file, const char* contents);
 void TapkiAppendFile(const char* file, const char* contents);
-
 #define TapkiPathJoin(arena, ...) __tpk_path_join(arena, __TapkiArr(const char*, __VA_ARGS__))
+// ---
 
-// Tracebacks
+// --- Tracebacks
 #define TapkiFrameF(fmt, ...) for( \
-    __tpk_scope __scope = (__tpk_scope){__FILE__":"__TPK_STR(__LINE__), __PRETTY_FUNCTION__, fmt}; \
-    !__scope.__f && (__tpk_frame_start(&__scope, ##__VA_ARGS__), 1); \
-    0 ? printf(fmt, ##__VA_ARGS__): __tpk_frame_end(), __scope.__f = 1 \
+    __tpk_scope __scope = (__tpk_scope){__FILE__":"__TPK_STR(__LINE__), __func__}; \
+    !__scope.__f && (snprintf(__scope.msg, sizeof(__scope.msg), fmt ? fmt : "", ##__VA_ARGS__), __tpk_frame_start(&__scope), 1); \
+    __tpk_frame_end(), __scope.__f = 1 \
 )
 #define TapkiFrame() TapkiFrameF(NULL)
 #define TapkiFramesIter(frame) TapkiVecForEachRev(&__tpk_gframes.frames, frame)
 TapkiStr TapkiTraceback(TapkiArena* arena);
+// ---
 
-// CLI
 
+// --- CLI
 typedef struct TapkiCLIVarsResult {
     bool ok;
     TapkiStr error;
@@ -143,6 +160,7 @@ int TapkiParseCLI(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv);
 TapkiCLIVarsResult TapkiCLI_ParseVars(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv);
 TapkiStr TapkiCLI_Usage(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv);
 TapkiStr TapkiCLI_Help(TapkiArena *ar, TapkiCLI cli[]);
+// ---
 
 
 // Short-version API
@@ -175,6 +193,12 @@ typedef TapkiCLI CLI;
 #define F(fmt, ...)                     TapkiF(arena, fmt, ##__VA_ARGS__)
 #define S(str)                          TapkiS(arena, str)
 
+#define ToI32(str)                      TapkiToI32(str)
+#define ToU32(str)                      TapkiToU32(str)
+#define ToI64(str)                      TapkiToI64(str)
+#define ToU64(str)                      TapkiToU64(str)
+#define ToFloat(str)                    TapkiToFloat(str)
+
 #define StrAppend(s, part)              TapkiStrAppend(arena, s, part)
 #define StrSplit(s, delim)              TapkiStrSplit(arena, s, delim)
 #define StrSub(s, from, to)             TapkiStrSub(arena, s, from, to)
@@ -189,6 +213,7 @@ typedef TapkiCLI CLI;
 #define StrMap_Erase(map, key)          TapkiStrMap_Erase(map, key)
 
 #define Die(fmt, ...)                   TapkiDie(fmt, ##__VA_ARGS__)
+#define Assert(...)                     TapkiAssert(...)
 
 #define WriteFile(file, data)           TapkiWriteFile(file, data)
 #define AppendFile(file, data)          TapkiAppendFile(file, data)
@@ -218,7 +243,7 @@ typedef TapkiCLI CLI;
 // --- Private stuff
 
 
-#define TapkiMapImplement(Name, Less, Eq) \
+#define TapkiMapImplement1(Name, Less, Eq) \
 static bool __##Name##_eq(const void* _lhs, const void* _rhs) { \
     const Name##_Key lhs = *(const Name##_Key*)_lhs; \
     const Name##_Key rhs = *(const Name##_Key*)_rhs; \
@@ -259,8 +284,6 @@ bool Name##_Erase(Name *map, const Name##_Key key) { \
     return __tapki_map_erase(map, &key, &__##Name##_info); \
 }
 
-#define __TPK_LESS(l, r) l < r
-#define __TPK_EQ(l, r) l == r
 #define __TapkiArr(t, ...) (t[]){__VA_ARGS__}, PP_NARG(__VA_ARGS__)
 
 typedef struct {
@@ -292,19 +315,15 @@ bool __tapki_map_erase(void *map, const void *key, const __tpk_map_info* info);
 #define __TPK_STR2(x) #x
 #define __TPK_STR(x) __TPK_STR2(x)
 
-#ifdef _MSC_VER
-#define __PRETTY_FUNCTION__ __FUNCSIG__
-#endif
-
 typedef struct {
     const char* loc;
     const char* func;
-    const char* fmt;
-    va_list vargs;
+    char msg[124];
     int __f;
 } __tpk_scope;
 
-void __tpk_frame_start(__tpk_scope* scope, ...);
+void __tpk_frame_start(__tpk_scope* scope);
+void __tpk_frame_vstart(__tpk_scope* scope, ...);
 void __tpk_frame_end();
 
 typedef struct __tpk_frame {

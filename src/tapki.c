@@ -13,9 +13,8 @@ extern "C" {
 
 _Thread_local __tpk_frames __tpk_gframes;
 
-void __tpk_frame_start(__tpk_scope *scope, ...)
+void __tpk_frame_start(__tpk_scope *scope)
 {
-    va_start(scope->vargs, scope);
     struct __tpk_frames* frames = &__tpk_gframes;
     if (TAPKI_UNLIKELY(!frames->arena)) {
         frames->arena = TapkiArenaCreate(1024);
@@ -27,7 +26,6 @@ void __tpk_frame_end()
 {
     struct __tpk_frames* frames = &__tpk_gframes;
     __tpk_scope *scope = TapkiVecPop(&frames->frames)->s;
-    va_end(scope->vargs);
 }
 
 void __tapki_vec_erase(void *_vec, size_t idx, size_t tsz)
@@ -54,12 +52,11 @@ TapkiStr TapkiTraceback(TapkiArena *arena)
         if (len > longest) longest = len;
     }
     TapkiFramesIter(frame) {
-        TapkiStr msg = TapkiF(arena, "  in %-*s '%s'", longest, frame->s->loc, frame->s->func);
+        TapkiStr msg = TapkiF(arena, "  %-*s in '%s()'", longest, frame->s->loc, frame->s->func);
         TapkiStrAppend(arena, &result, msg.d);
-        if (frame->s->fmt) {
+        if (frame->s->msg[0]) {
             TapkiStrAppend(arena, &result, " => ");
-            TapkiStr context = TapkiVF(arena, frame->s->fmt, frame->s->vargs);
-            TapkiStrAppend(arena, &result, context.d);
+            TapkiStrAppend(arena, &result, frame->s->msg);
         }
         TapkiVecAppend(arena, &result, '\n');
     }
@@ -359,10 +356,7 @@ bool __tapki_map_erase(void *_map, const void *key, const __tpk_map_info* info)
     }
 }
 
-#define __TPK_SMAP_LESS(l, r) strcmp(l, r) < 0
-#define __TPK_SMAP_EQ(l, r) strcmp(l, r) == 0
-
-TapkiMapImplement(TapkiStrMap, __TPK_SMAP_LESS, __TPK_SMAP_EQ)
+TapkiMapImplement(TapkiStrMap, TAPKI_STRING_LESS, TAPKI_STRING_EQ)
 
 char *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, size_t al)
 {
@@ -499,32 +493,127 @@ int32_t TapkiToI32(const char *s)
     return (int32_t)res;
 }
 
-TapkiCLIVarsResult TapkiCLI_ParseVars(TapkiArena *ar, TapkiCLI cli[], int argc, char** argv)
-{
-    TapkiCLIVarsResult res = {0};
+typedef struct {
+    TapkiCLI* p;
+    char* alias;
+} __tpk_cli_spec;
 
-    return res;
+TapkiMapDeclare(__tpk_cli_named, char*, __tpk_cli_spec);
+TapkiMapImplement(__tpk_cli_named, TAPKI_STRING_LESS, TAPKI_STRING_EQ);
+
+typedef TapkiVec(__tpk_cli_spec) __tpk_cli_pos;
+typedef TapkiVec(TapkiCLI) __tpk_cli_storage;
+
+typedef struct {
+    __tpk_cli_named named;
+    __tpk_cli_pos pos;
+    __tpk_cli_storage storage;
+} __tpk_cli_context;
+
+static void __tpk_cli_reset(TapkiArena *ar, __tpk_cli_context* ctx, TapkiCLI cli[])
+{
+    size_t count = 0;
+    TapkiCLI* curr = cli;
+    while(curr->names) {
+        count++;
+        curr++;
+    }
+    TapkiVecReserve(ar, &ctx->storage, count);
+    if (count) {
+        memcpy(ctx->storage.d, cli, sizeof(*cli) * count);
+        ctx->storage.size = count;
+    }
+}
+
+static char* __tpk_cli_dashes(char* name, size_t *dashes)
+{
+    *dashes = 0;
+    while(*name == '-') {
+        (*dashes)++; name++;
+    }
+    TapkiAssert(*dashes == 0 || *dashes == 1 || *dashes == 2);
+    return name;
+}
+
+static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, TapkiCLI _source_spec[])
+{
+    __tpk_cli_reset(ar, ctx, _source_spec);
+    size_t index = 0;
+    TapkiVecForEach(&ctx->storage, Spec) {
+        FrameF("Parse CLI argument spec (#%zu): %s", index, Spec->names) {
+            TapkiAssert(Spec->data != NULL && "Pointer to variable missing");
+            char *saveptr = NULL;
+            char *names = TapkiS(ar, Spec->names).d;
+            size_t dashes;
+            char* alias;
+            bool was_pos = false;
+            bool was_named = false;
+            while((alias = strtok_r(saveptr ? NULL : names, ",", &saveptr))) {
+                alias = __tpk_cli_dashes(alias, &dashes);
+                if (dashes) {
+                    was_named = true;
+                    *__tpk_cli_named_At(ar, &ctx->named, alias) = (__tpk_cli_spec){Spec, alias};
+                } else {
+                    was_pos = true;
+                    *TapkiVecPush(ar, &ctx->pos) = (__tpk_cli_spec){Spec, alias};
+                }
+                if (was_named && was_pos) {
+                    Die("CLI Spec has '--named' AND 'pos' arguments");
+                }
+            }
+        }
+    }
+}
+
+static TapkiCLIVarsResult __TapkiCLI_ParseVars(TapkiArena *ar, __tpk_cli_context* ctx, int argc, char** argv)
+{
 }
 
 
-TapkiStr TapkiCLI_Help(TapkiArena *ar, TapkiCLI cli[])
+static TapkiStr __TapkiCLI_Help(TapkiArena *ar, const __tpk_cli_context* ctx)
 {
 
+}
+
+static TapkiStr __TapkiCLI_Usage(TapkiArena *ar, const __tpk_cli_context* ctx, int argc, char **argv)
+{
+    TapkiStr result = TapkiS(ar, argv[0]);
+    TapkiStrAppend(ar, &result, ": ");
+    //todo:
+    return result;
 }
 
 TapkiStr TapkiCLI_Usage(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv)
 {
-    TapkiStr result = TapkiS(ar, argv[0]);
-    TapkiStrAppend(ar, &result, ": ");
+    __tpk_cli_context ctx = {0};
+    __tpk_cli_init(ar, &ctx, cli);
+    return __TapkiCLI_Usage(ar, &ctx, argc, argv);
+}
+
+TapkiStr TapkiCLI_Help(TapkiArena *ar, TapkiCLI cli[])
+{
+    __tpk_cli_context ctx = {0};
+    __tpk_cli_init(ar, &ctx, cli);
+    return __TapkiCLI_Help(ar, &ctx);
+}
+
+TapkiCLIVarsResult TapkiCLI_ParseVars(TapkiArena *ar, TapkiCLI cli[], int argc, char** argv)
+{
+    __tpk_cli_context ctx = {0};
+    __tpk_cli_init(ar, &ctx, cli);
+    return __TapkiCLI_ParseVars(ar, &ctx, argc, argv);
 }
 
 int TapkiParseCLI(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv)
 {
-    TapkiCLIVarsResult result = TapkiCLI_ParseVars(ar, cli, argc, argv);
+    __tpk_cli_context ctx = {0};
+    __tpk_cli_init(ar, &ctx, cli);
+    TapkiCLIVarsResult result = __TapkiCLI_ParseVars(ar, &ctx, argc, argv);
     if (!result.ok) {
+        __tpk_cli_reset(ar, &ctx, cli);
         fprintf(stderr, "%s\n", result.error.d);
-        fprintf(stderr, "Usage: %s\n", TapkiCLI_Usage(ar, cli, argc, argv).d);
-        fprintf(stderr, "%s\n", TapkiCLI_Help(ar, cli).d);
+        fprintf(stderr, "Usage: %s\n", __TapkiCLI_Usage(ar, &ctx, argc, argv).d);
+        fprintf(stderr, "%s\n", __TapkiCLI_Help(ar, &ctx).d);
         return 1;
     }
     return 0;
