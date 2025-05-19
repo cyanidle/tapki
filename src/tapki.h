@@ -142,6 +142,7 @@ typedef struct TapkiCLIVarsResult {
 typedef struct TapkiCLI {
     const char* names;
     void* data;
+    const char* help;
     bool flag;
     bool u64;
     bool i64;
@@ -213,6 +214,13 @@ typedef TapkiCLI CLI;
 #define StrMap_At(map, key)             TapkiStrMap_At(arena, map, key)
 #define StrMap_Find(map, key)           TapkiStrMap_Find(map, key)
 #define StrMap_Erase(map, key)          TapkiStrMap_Erase(map, key)
+
+#define MapDeclare(map, key, value)     TapkiMapDeclare(map, key, value)
+#define MapImplement(map, less, eq)     TapkiMapImplement(map, less, eq)
+#define TRIVIAL_LESS                    TAPKI_TRIVIAL_LESS
+#define TRIVIAL_EQ                      TAPKI_TRIVIAL_EQ
+#define STRING_LESS                     TAPKI_STRING_LESS
+#define STRING_EQ                       TAPKI_STRING_EQ
 
 #define Die(fmt, ...)                   TapkiDie(fmt, ##__VA_ARGS__)
 #define Assert(...)                     TapkiAssert(...)
