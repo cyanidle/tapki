@@ -71,11 +71,11 @@ typedef TapkiVec(TapkiStr) TapkiStrVec;
 #define TapkiMapDeclare(Name, K, V) \
     typedef struct{ const K key; V value; } Name##_Pair; \
     typedef TapkiVec(Name##_Pair) Name; \
-    typedef K Name##_Key; \
+    typedef const K Name##_Key; \
     typedef V Name##_Value; \
-    Name##_Value* Name##_Find(Name* map, const Name##_Key key); \
-    Name##_Value* Name##_At(TapkiArena* arena, Name* map, const Name##_Key key); \
-    bool Name##_Erase(Name* map, const Name##_Key key); \
+    Name##_Value* Name##_Find(Name* map, Name##_Key key); \
+    Name##_Value* Name##_At(TapkiArena* arena, Name* map, Name##_Key key); \
+    bool Name##_Erase(Name* map, Name##_Key key); \
 
 #define TapkiMapKT(map) __typeof__((map)->d->key)
 #define TapkiMapVT(map) __typeof__((map)->d->value)
@@ -255,15 +255,15 @@ typedef TapkiCLI CLI;
 
 #define TapkiMapImplement1(Name, Less, Eq) \
 static bool __##Name##_eq(const void* _lhs, const void* _rhs) { \
-    const Name##_Key lhs = *(const Name##_Key*)_lhs; \
-    const Name##_Key rhs = *(const Name##_Key*)_rhs; \
+    Name##_Key lhs = *(Name##_Key*)_lhs; \
+    Name##_Key rhs = *(Name##_Key*)_rhs; \
     return Eq(lhs, rhs); \
 } \
 static void* __##Name##_lower_bound(void* _begin, void* _end, const void* _key) { \
     Name##_Pair* begin = (Name##_Pair*)_begin; \
     Name##_Pair* end = (Name##_Pair*)_end; \
     Name##_Pair* it;  \
-    const Name##_Key key = *(const Name##_Key*)_key; \
+    Name##_Key key = *(Name##_Key*)_key; \
     size_t count, step;  \
     count = end - begin;  \
     while (count > 0) {  \
@@ -284,13 +284,13 @@ static const __tpk_map_info __##Name##_info = { \
     sizeof(Name##_Key), sizeof(Name##_Pair), \
     _Alignof(Name##_Pair), offsetof(Name##_Pair, value) \
 }; \
-Name##_Value *Name##_At(TapkiArena *ar, Name *map, const Name##_Key key) {  \
+Name##_Value *Name##_At(TapkiArena *ar, Name *map, Name##_Key key) {  \
     return (Name##_Value*)__tapki_map_at(ar, map, &key, &__##Name##_info);  \
 } \
-Name##_Value *Name##_Find(Name *map, const Name##_Key key) {  \
+Name##_Value *Name##_Find(Name *map, Name##_Key key) {  \
         return (Name##_Value*)__tapki_map_find(map, &key, &__##Name##_info);  \
 } \
-bool Name##_Erase(Name *map, const Name##_Key key) { \
+bool Name##_Erase(Name *map, Name##_Key key) { \
     return __tapki_map_erase(map, &key, &__##Name##_info); \
 }
 
