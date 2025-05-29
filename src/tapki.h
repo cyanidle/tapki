@@ -55,16 +55,18 @@ void TapkiArenaFree(TapkiArena* arena);
 #define TapkiVecAppend(arena, vec, ...) __tapki_vec_append((arena), (vec), __TapkiArr(TapkiVecT(vec), __VA_ARGS__), TapkiVecSA(vec))
 #define TapkiVecPush(arena, vec) ((TapkiVecT(vec)*)__tapki_vec_push((arena), (vec), TapkiVecSA(vec)))
 #define TapkiVecPop(vec)  ((TapkiVecT(vec)*)__tapki_vec_pop((vec), TapkiVecS(vec)))
-#define TapkiVecAt(vec, idx)  ((TapkiVecT(vec)*)__tapki_vec_at((vec), idx))[idx]
+#define TapkiVecAt(vec, idx)  ((TapkiVecT(vec)*)__tapki_vec_at((vec), idx, TapkiVecS(vec)) + idx)
 #define TapkiVecErase(vec, idx)  __tapki_vec_erase((vec), idx, TapkiVecS(vec))
 #define TapkiVecInsert(arena, vec, idx)  ((TapkiVecT(vec)*)__tapki_vec_insert((arena), (vec), idx, TapkiVecSA(vec)))
 #define TapkiVecForEach(vec, it) for (TapkiVecT(vec)* it = (vec)->d; it && it != (vec)->d + (vec)->size; ++it)
 #define TapkiVecForEachRev(vec, it) for (TapkiVecT(vec)* it = (vec)->d + (vec)->size - 1; (vec)->d && it != (vec)->d - 1; --it)
 void    TapkiVecClear(void* _vec);
 #define TapkiVecReserve(arena, vec, n) __tapki_vec_reserve((arena), (vec), n, TapkiVecSA(vec))
+#define TapkiVecResize(arena, vec, n) __tapki_vec_resize((arena), (vec), n, TapkiVecSA(vec))
 
 typedef TapkiVec(char) TapkiStr;
 typedef TapkiVec(TapkiStr) TapkiStrVec;
+typedef TapkiVec(int64_t) TapkiIntVec;
 // ---
 
 // --- Maps
@@ -93,10 +95,11 @@ TapkiMapDeclare(TapkiStrMap, char*, TapkiStr);
 
 // --- Strings
 #define Tapki_npos ((size_t)-1)
-#define TapkiStringAppend(arena, s, ...) __tapkis_append((arena), (s), __TapkiArr(const char*, __VA_ARGS__))
+#define TapkiStrAppend(arena, s, ...) __tapkis_append((arena), (s), __TapkiArr(const char*, __VA_ARGS__))
 
 TapkiStr TapkiStrSub(TapkiArena *ar, const char* target, size_t from, size_t to);
-void TapkiStrAppend(TapkiArena *ar, TapkiStr* target, const char* part);
+_TAPKI_FMT_ATTR(3, 4) TapkiStr* TapkiStrAppendF(TapkiArena *ar, TapkiStr* str, const char* __restrict__ fmt, ...);
+TapkiStr* TapkiStrAppendVF(TapkiArena *ar, TapkiStr* str, const char* __restrict__ fmt, va_list list);
 size_t TapkiStrFind(const char* target, const char* what, size_t offset);
 size_t TapkiStrRevFind(const char* target, const char* what);
 bool TapkiStrContains(const char* target, const char* what);
@@ -136,6 +139,7 @@ TapkiStr TapkiTraceback(TapkiArena* arena);
 // --- CLI
 typedef struct TapkiCLIVarsResult {
     bool ok;
+    bool need_help;
     TapkiStr error;
 } TapkiCLIVarsResult;
 
@@ -144,14 +148,13 @@ typedef struct TapkiCLI {
     void* data;
     const char* help;
     bool flag;
-    bool u64;
-    bool i64;
+    bool int64;
     bool required;
-    int nargs;
+    bool many;
 } TapkiCLI;
 
 // Example:
-// Str name; bool flag;
+// Str name = {0}; bool flag = {0};
 // CLI cli[] = { {"-n,--name", &name}, {"-s,--switch", &flag, .is_flag=true}, {0} };
 // int ret = ParseCLI(arena, cli, argc, argv);
 // if (ret != 0) return ret;
@@ -159,9 +162,9 @@ typedef struct TapkiCLI {
 int TapkiParseCLI(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv);
 
 // Lower level CLI api
-TapkiCLIVarsResult TapkiCLI_ParseVars(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv);
-TapkiStr TapkiCLI_Usage(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv);
-TapkiStr TapkiCLI_Help(TapkiArena *ar, TapkiCLI cli[]);
+TapkiCLIVarsResult TapkiCLI_ParseVars(TapkiArena *ar, const TapkiCLI cli[], int argc, char **argv);
+TapkiStr TapkiCLI_Usage(TapkiArena *ar, const TapkiCLI cli[], int argc, char **argv);
+TapkiStr TapkiCLI_Help(TapkiArena *ar, const TapkiCLI cli[]);
 // ---
 
 
@@ -172,6 +175,7 @@ typedef TapkiArena Arena;
 typedef TapkiStr Str;
 typedef TapkiStrMap StrMap;
 typedef TapkiStrVec StrVec;
+typedef TapkiIntVec IntVec;
 typedef TapkiCLI CLI;
 
 #define Vec(type)                       TapkiVec(type)
@@ -185,6 +189,7 @@ typedef TapkiCLI CLI;
 #define VecInsert(vec, idx)             TapkiVecInsert(arena, vec, idx)
 #define VecClear(vec)                   TapkiVecClear(vec)
 #define VecReserve(vec, n)              TapkiVecReserve(arena, vec, n)
+#define VecResize(vec, n)               TapkiVecResize(arena, vec, n)
 
 #define ArenaCreate(chunksize)          TapkiArenaCreate(chunksize)
 #define ArenaAllocAligned(ar, sz, al)   TapkiArenaAllocAligned(ar, sz, al)
@@ -201,7 +206,8 @@ typedef TapkiCLI CLI;
 #define ToU64(str)                      TapkiToU64(str)
 #define ToFloat(str)                    TapkiToFloat(str)
 
-#define StrAppend(s, part)              TapkiStrAppend(arena, s, part)
+#define StrAppend(s, part, ...)         TapkiStrAppend(arena, s, part, ##__VA_ARGS__)
+#define StrAppendF(s, fmt, ...)         TapkiStrAppendF(arena, fmt, ##__VA_ARGS__)
 #define StrSplit(s, delim)              TapkiStrSplit(arena, s, delim)
 #define StrSub(s, from, to)             TapkiStrSub(arena, s, from, to)
 #define StrFind(s, needle, offs)        TapkiStrFind(s, needle, offs)
@@ -305,6 +311,7 @@ typedef struct {
 TapkiStr __tpk_path_join(TapkiArena* ar, const char** parts, size_t count);
 void* __tapki_vec_insert(TapkiArena* ar, void* _vec, size_t idx, size_t tsz, size_t al);
 char* __tapki_vec_reserve(TapkiArena* ar, void* _vec, size_t count, size_t tsz, size_t al);
+char* __tapki_vec_resize(TapkiArena* ar, void* _vec, size_t count, size_t tsz, size_t al);
 void __tapki_vec_append(TapkiArena* ar, void* _vec, void* data, size_t count, size_t tsz, size_t al);
 TapkiStr* __tapkis_append(TapkiArena *ar, TapkiStr* target, const char **src, size_t count);
 void __tapki_vec_erase(void* _vec, size_t idx, size_t tsz);

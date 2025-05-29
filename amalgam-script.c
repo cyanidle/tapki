@@ -31,9 +31,14 @@ int main(int argc, char** argv) {
     Arena* arena = ArenaCreate(1024 * 20);
     test();
     Str base_dir = S(".");
+    bool test = false;
+    Str kek = {0};
+    IntVec vals = {0};
     CLI cli[] = {
         {"dir", &base_dir},
-        {"--test", &base_dir, .flag = true},
+        {"--test", &test, .flag = true},
+        {"--kek", &kek},
+        {"--val", &vals, .int64 = true, .many = true},
         {0},
     };
     int ret = ParseCLI(cli, argc, argv);
