@@ -1,0 +1,2 @@
+- [ ] Skip all option in CLI (--)
+- [ ] Actually use `.program = true`
