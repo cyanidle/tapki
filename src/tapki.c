@@ -773,7 +773,7 @@ static TapkiCLIVarsResult __TapkiCLI_ParseVars(TapkiArena *ar, __tpk_cli_context
     return result;
 }
 
-#if !TAPKI_CLI_TTY
+#ifdef TAPKI_CLI_NO_TTY
 static size_t __tpk_term_width() { return 0; }
 #elif defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN

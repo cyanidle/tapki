@@ -13,9 +13,7 @@
 extern "C" {
 #endif
 
-#ifndef TAPKI_CLI_TTY
-#define TAPKI_CLI_TTY 1
-#endif
+//#undef TAPKI_CLI_NO_TTY
 
 #ifdef __GNUC__
     #define TAPKI_NORETURN __attribute__((noreturn))
