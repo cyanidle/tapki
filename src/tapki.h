@@ -13,6 +13,10 @@
 extern "C" {
 #endif
 
+#ifndef TAPKI_CLI_TTY
+#define TAPKI_CLI_TTY 1
+#endif
+
 #ifdef __GNUC__
     #define TAPKI_NORETURN __attribute__((noreturn))
     #define TAPKI_UNLIKELY(x) __builtin_expect(!!(x), 0)
@@ -145,12 +149,14 @@ typedef struct TapkiCLIVarsResult {
 
 typedef struct TapkiCLI {
     const char* names;
-    void* data;
+    void* data; // pointer to variable of fitting type
+    // all optional:
     const char* help;
-    bool flag;
-    bool int64;
+    bool flag; // kw-only: Treat as a switch
+    bool int64; // Parse as int64, not Str
     bool required;
-    bool many;
+    bool many; // Parse into Vector of values
+    bool program; // this option is for the whole program (names -> prog name, help -> description)
 } TapkiCLI;
 
 // Example:

@@ -423,13 +423,14 @@ TapkiStr* TapkiStrAppendVF(TapkiArena *ar, TapkiStr *str, const char *fmt, va_li
     size_t count = vsnprintf(buff, cap, fmt, list);
     if (count) {
         size_t was = str->size;
+        TapkiVecReserve(ar, str, str->size + count);
         if (count < cap) {
-            if (count) memcpy(str->d + was, buff, count + 1);
+            if (count)
+                memcpy(str->d + was, buff, count + 1);
         } else {
-            TapkiVecResize(ar, str, str->size + count);
-            TapkiStr result = __tapkis_withn(ar, count);
             vsnprintf(str->d + was, str->cap, fmt, list2);
         }
+        str->size += count;
     }
     va_end(list2);
     return str;
@@ -546,6 +547,7 @@ typedef struct {
 typedef struct {
     __tpk_cli_priv* info;
     const char* alias;
+    bool is_long;
 } __tpk_cli_spec;
 
 TapkiMapDeclare(__tpk_cli_named, char*, __tpk_cli_spec);
@@ -556,7 +558,8 @@ typedef struct {
     TapkiVec(__tpk_cli_spec) pos;
     TapkiVec(__tpk_cli_priv) _storage;
     bool need_help;
-    TapkiCLI tpk_help_opt;
+    TapkiCLI help_opt;
+    TapkiCLI prog_opt;
 } __tpk_cli_context;
 
 static const char* __tpk_cli_dashes(const char* name, size_t *dashes)
@@ -591,7 +594,7 @@ static void __tpk_cli_reset(TapkiArena *ar, __tpk_cli_context* ctx)
 static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCLI _source_spec[])
 {
     ctx->need_help = false;
-    ctx->tpk_help_opt = (TapkiCLI){"-h,--help", &ctx->need_help, .flag=true, .help="show this help message and exit"};
+    ctx->help_opt = (TapkiCLI){"-h,--help", &ctx->need_help, .flag=true, .help="show this help message and exit"};
     {
         size_t count = 0;
         const TapkiCLI* curr = _source_spec;
@@ -605,11 +608,21 @@ static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCL
         TapkiVecForEach(&ctx->_storage, it) {
             *it = (__tpk_cli_priv){curr++};
         }
-        TapkiVecAppend(ar, &ctx->_storage, (__tpk_cli_priv){&ctx->tpk_help_opt});
+        TapkiVecAppend(ar, &ctx->_storage, (__tpk_cli_priv){&ctx->help_opt});
     }
     TapkiArena* temp = TapkiArenaCreate(256);
     TapkiVecForEach(&ctx->_storage, it) {
         FrameF("Parse CLI argument spec (#%zu): %s", it->orig - _source_spec, it->orig->names) {
+            if (it->orig->program) {
+                if (ctx->prog_opt.program) {
+                    Die("Program option already specified");
+                }
+                if (it->orig->data) {
+                    Die("Program option cannot have pointer to data");
+                }
+                ctx->prog_opt = *it->orig;
+                continue;
+            }
             for (__tpk_cli_priv* check = it + 1; check != ctx->_storage.d + ctx->_storage.size; ++check) {
                 if (check->orig->data == it->orig->data) {
                     Die("Conflict: output &pointer already used in argument: %s", check->orig->names);
@@ -624,13 +637,21 @@ static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCL
             bool was_named = false;
             while((alias = strtok_r(saveptr ? NULL : names, ",", &saveptr))) {
                 alias = (char*)__tpk_cli_dashes(alias, &dashes);
+                if (dashes > 2) {
+                    Die("Unexpected '-' count: %zu", dashes);
+                }
                 if (dashes) {
                     if (it->orig->flag && it->orig->required) {
                         Die("'flag' arguments cannot be also 'required'");
                     }
                     was_named = true;
-                    *__tpk_cli_named_At(ar, &ctx->named, alias) = (__tpk_cli_spec){it, alias};
+                    __tpk_cli_spec* named = __tpk_cli_named_At(ar, &ctx->named, alias);
+                    *named = (__tpk_cli_spec){it, alias};
+                    named->is_long = dashes == 2;
                 } else {
+                    if (was_pos) {
+                        Die("Positional arguments cannot have aliases (e.g. 'name1,name2')");
+                    }
                     was_pos = true;
                     if (it->orig->flag) {
                         Die("Positional arguments cannot be flags");
@@ -710,18 +731,24 @@ static TapkiCLIVarsResult __TapkiCLI_ParseVars(TapkiArena *ar, __tpk_cli_context
                 lookup[eq - arg] = 0;
             }
             named = __tpk_cli_named_Find(&ctx->named, lookup);
+            bool is_two = dashes == 2;
+            if (named->is_long != is_two) {
+                const char* expected = named->is_long ? "--" : "-";
+                result.error = TapkiF(ar, "unknown argument (#%d): %s. Expected prefix: %s", i, arg, expected);
+                return result;
+            }
             if (!named) {
-                result.error = TapkiF(ar, "unknown argument (#%d): %s", i, lookup);
+                result.error = TapkiF(ar, "unknown argument (#%d): %s", i, arg);
                 return result;
             }
             if (named->info->hits && !named->info->orig->many) {
-                result.error = TapkiF(ar, "argument (#%d): %s: more than one value provided", i, lookup);
+                result.error = TapkiF(ar, "argument (#%d): %s: more than one value provided", i, arg);
                 return result;
             }
             if (named->info->orig->flag) {
                 *(bool*)named->info->orig->data = true;
                 if (TAPKI_UNLIKELY(eq)) {
-                    result.error = TapkiF(ar, "argument (#%d): %s: cannot assign with '=' to 'flag' named argument", i, lookup);
+                    result.error = TapkiF(ar, "argument (#%d): %s: cannot assign with '=' to 'flag' named argument", i, arg);
                     return result;
                 }
                 named = NULL;
@@ -745,43 +772,157 @@ static TapkiCLIVarsResult __TapkiCLI_ParseVars(TapkiArena *ar, __tpk_cli_context
     return result;
 }
 
-/*
-usage: test.py [-h] [--long LONG] pos
+#if !TAPKI_CLI_TTY
+static size_t __tpk_term_width() { return 0; }
+#elif defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+static size_t __tpk_term_width() {
+    DWORD mode;
+    HANDLE herr = GetStdHandle(STD_ERROR_HANDLE);
+    if (!GetConsoleMode(herr, &mode)) return 0;
+    mode |= ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    (void)SetConsoleMode(herr, mode);
+    CONSOLE_FONT_INFO info;
+    GetCurrentConsoleFont(herr, FALSE, &info);
+    return info.dwFontSize.X;
+}
+#else
+#include <sys/ioctl.h>
+#include <stdio.h>
+#include <unistd.h>
+static size_t __tpk_term_width() {
+    if (!isatty(STDERR_FILENO)) return 0;
+    struct winsize w;
+    ioctl(STDERR_FILENO, TIOCGWINSZ, &w);
+    return w.ws_col;
+}
+#endif
 
-positional arguments:
-  pos                   Pos arg
-
-options:
-  -h, --help            show this help message and exit
-  --long LONG, -l LONG  Named
-*/
-
+// usage: prog [-h] [--long <long>] pos
 static TapkiStr __TapkiCLI_Usage(TapkiArena *ar, __tpk_cli_context* ctx, int argc, char **argv)
 {
     size_t offset = TapkiStrRevFind(argv[0], __tpk_sep);
     TapkiStr result = TapkiS(ar, argv[0] + (offset == Tapki_npos ? 0 : offset + 1));
-    TapkiStrAppend(ar, &result, ": ");
     TapkiVecForEach(&ctx->named, named) {
         const TapkiCLI* cli = named->value.info->orig;
         if (named->value.info->hits++) continue;
-        TapkiStrAppendF(ar, &result, " [%s]", named->value.alias);
-        //  TODO:
+        const char* dashes = named->value.is_long ? "--" : "-";
+        const char* metavar = cli->flag ? "" : TapkiF(ar, " <%s>", named->value.alias).d;
+        const char* dots = cli->many ? "..." : "";
+        const char* lbracket = cli->required ? "" : "[";
+        const char* rbracket = cli->required ? "" : "]";
+        TapkiStrAppend(ar, &result, " ", lbracket, dashes, named->value.alias, metavar, rbracket, dots);
     }
     TapkiVecForEach(&ctx->pos, pos) {
         const TapkiCLI* cli = pos->info->orig;
-        if (pos->info->hits++) continue;
-        TapkiStrAppend(ar, &result, " ", pos->alias);
-        if (pos->info->orig->many) {
-            TapkiStrAppend(ar, &result, "...");
-        }
+        const char* lbracket = cli->required ? "" : "[";
+        const char* rbracket = cli->required ? "" : "]";
+        const char* dots = cli->many ? "..." : "";
+        TapkiStrAppend(ar, &result, " ", lbracket, pos->alias, rbracket, dots);
     }
     return result;
 }
 
+/*
+positional arguments:
+pos                   pos arg help...
+                      wrap...
+[longest............] [until termw................]
+options:           [__]
+-h, --help            show this help message and exit
+--long LONG, -l LONG  named arg (not flag) help
+*/
+
+static void __tpk_cli_wrapping_help(size_t pad, size_t termw, TapkiArena *ar, TapkiStr* out, const char* args, const char* help)
+{
+    help = help ? help : "";
+    size_t rlen = 0; int wrap = 0;
+again:
+    rlen = strlen(help);
+    if (termw && (rlen + pad + 3) > termw) {
+        int diff = termw - (pad + 3);
+        wrap = diff > 0 ? diff : 10;
+    } else {
+        wrap = (int)rlen;
+    }
+    TapkiStrAppendF(ar, out, "%-*s  %.*s\n", (int)pad, args, wrap, help);
+    if (rlen != wrap) {
+        help += wrap;
+        args = "";
+        goto again;
+    }
+}
+
+
 static TapkiStr __TapkiCLI_Help(TapkiArena *ar, __tpk_cli_context* ctx)
 {
+    size_t termw = __tpk_term_width();
+    int pad = 0;
+    {
+        TapkiVecForEach(&ctx->pos, pos) {
+            size_t len = strlen(pos->alias);
+            if (len > pad)
+                pad = (int)len;
+        }
+        size_t lastLen = 0;
+        size_t metaVarLen = 0;
+        __tpk_cli_priv* info = NULL;
+        TapkiVecForEach(&ctx->named, named) {
+            info = named->value.info;
+            int hits = info->hits++;
+            if (hits == 0) {
+                if (lastLen > pad) {
+                    pad = (int)lastLen;
+                }
+                metaVarLen = 0;
+                info->hits = 0;
+                lastLen = 0;
+            } else {
+                lastLen += 2; // comma + space
+            }
+            size_t aliasLen = strlen(named->value.alias);
+            if (!lastLen && !info->orig->flag) {
+                metaVarLen = aliasLen + 3; // _<var>
+            }
+            lastLen += metaVarLen;
+            lastLen += aliasLen;
+            lastLen += named->value.is_long ? 2 : 1; // -- or -
+        }
+        if (lastLen > pad)
+            pad = (int)lastLen;
+        if (info)
+            info->hits = 0;
+    }
     TapkiStr result = {0};
-    //todo:
+    {
+        TapkiStrAppend(ar, &result, "positional arguments:\n");
+        TapkiVecForEach(&ctx->pos, pos) {
+            __tpk_cli_wrapping_help(pad, termw, ar, &result, pos->alias, pos->info->orig->help);
+        }
+        TapkiStrAppend(ar, &result, "\noptions:\n");
+        const char* metavar = "";
+        TapkiStr lastNamedArg = {0};
+        const char* lastHelp = "";
+        TapkiVecForEach(&ctx->named, named) {
+            __tpk_cli_spec* spec = &named->value;
+            if (!spec->info->hits++) {
+                if (lastNamedArg.size) {
+                    __tpk_cli_wrapping_help(pad, termw, ar, &result, lastNamedArg.d, lastHelp);
+                    lastNamedArg.size = 0;
+                }
+                lastHelp = spec->info->orig->help;
+                metavar = spec->info->orig->flag ? "" : TapkiF(ar, " <%s>", named->key).d;
+            } else {
+                TapkiStrAppend(ar, &lastNamedArg, ", ");
+            }
+            const char* dash = spec->is_long ? "--" : "-";
+            TapkiStrAppend(ar, &lastNamedArg, dash, spec->alias, metavar);
+        }
+        if (lastNamedArg.size) {
+            __tpk_cli_wrapping_help(pad, termw, ar, &result, lastNamedArg.d, lastHelp);
+        }
+    }
     return result;
 }
 
@@ -822,6 +963,7 @@ int TapkiParseCLI(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv)
         fprintf(stderr, "usage: %s\n\n", __TapkiCLI_Usage(ar, &ctx, argc, argv).d);
         __tpk_cli_reset(ar, &ctx);
         fprintf(stderr, "%s\n", __TapkiCLI_Help(ar, &ctx).d);
+        return 1;
     }
     return 0;
 }

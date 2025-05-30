@@ -35,10 +35,10 @@ int main(int argc, char** argv) {
     Str kek = {0};
     IntVec vals = {0};
     CLI cli[] = {
-        {"dir", &base_dir},
-        {"--test", &test, .flag = true},
-        {"--kek", &kek},
-        {"--val", &vals, .int64 = true, .many = true},
+        {"dir", &base_dir, .help = "help: aaaaaaaaaaaaaaaaa"},
+        {"--test", &test, .flag = true, .help = "help: bbbbbbbbbbbb"},
+        {"--kek", &kek, .help = "help: ccccccccccccc"},
+        {"--val", &vals, .int64 = true, .many = true, .help = "help: dddddddddd"},
         {0},
     };
     int ret = ParseCLI(cli, argc, argv);
