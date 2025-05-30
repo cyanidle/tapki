@@ -700,17 +700,17 @@ static TapkiCLIVarsResult __TapkiCLI_ParseVars(TapkiArena *ar, __tpk_cli_context
     __tpk_cli_spec* pos_end = ctx->pos.d + ctx->pos.size;
     size_t posIndex = 0;
     for(int i = 1; i < argc; ++i) {
-        const char* arg = argv[i];
+        const char* orig_arg = argv[i];
         if (named) {
         parse_named:
-            if (!__tpk_cli_parse(ar, named, i, arg, &result.error)) {
+            if (!__tpk_cli_parse(ar, named, i, orig_arg, &result.error)) {
                 return result;
             }
             named = NULL;
             continue;
         }
         size_t dashes;
-        arg = __tpk_cli_dashes((char*)arg, &dashes);
+        const char* arg = __tpk_cli_dashes((char*)orig_arg, &dashes);
         if (dashes == 0) {
             if (pos == pos_end) {
                 result.error = TapkiF(ar, "unexpected positional argument (#%d): %s", i, arg);
@@ -730,25 +730,26 @@ static TapkiCLIVarsResult __TapkiCLI_ParseVars(TapkiArena *ar, __tpk_cli_context
                 lookup = TapkiS(ar, arg).d;
                 lookup[eq - arg] = 0;
             }
-            named = __tpk_cli_named_Find(&ctx->named, lookup);
+            named = __tpk_cli_named_Find(&ctx->named, arg);
+            if (!named) {
+                result.error = TapkiF(ar, "unknown argument (#%d): %s", i, orig_arg);
+                return result;
+            }
             bool is_two = dashes == 2;
             if (named->is_long != is_two) {
                 const char* expected = named->is_long ? "--" : "-";
-                result.error = TapkiF(ar, "unknown argument (#%d): %s. Expected prefix: %s", i, arg, expected);
-                return result;
-            }
-            if (!named) {
-                result.error = TapkiF(ar, "unknown argument (#%d): %s", i, arg);
+                result.error = TapkiF(ar, "unknown argument (#%d): %s. Expected prefix: %s", i, orig_arg, expected);
                 return result;
             }
             if (named->info->hits && !named->info->orig->many) {
-                result.error = TapkiF(ar, "argument (#%d): %s: more than one value provided", i, arg);
+                result.error = TapkiF(ar, "argument (#%d): %s: more than one value provided", i, orig_arg);
                 return result;
             }
             if (named->info->orig->flag) {
                 *(bool*)named->info->orig->data = true;
                 if (TAPKI_UNLIKELY(eq)) {
-                    result.error = TapkiF(ar, "argument (#%d): %s: cannot assign with '=' to 'flag' named argument", i, arg);
+                    result.error = TapkiF(ar,
+                        "argument (#%d): %s: cannot assign with '=' to 'flag' named argument", i, orig_arg);
                     return result;
                 }
                 named = NULL;
@@ -757,7 +758,7 @@ static TapkiCLIVarsResult __TapkiCLI_ParseVars(TapkiArena *ar, __tpk_cli_context
                 goto parse_named;
             }
         } else {
-            result.error = TapkiF(ar, "unexpected amount of '-' in argument (#%d): %s", i, arg);
+            result.error = TapkiF(ar, "unexpected amount of '-' in argument (#%d): %s", i, orig_arg);
             return result;
         }
     }
