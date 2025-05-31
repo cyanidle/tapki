@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #ifndef TAPKI_H
 #define TAPKI_H
 
@@ -249,6 +249,7 @@ typedef TapkiCLI CLI;
 
 #endif
 
+// Short-version API END
 
 
 

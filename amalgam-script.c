@@ -42,6 +42,7 @@ int main(int argc, char** argv) {
     Str header = ReadFile(PathJoin(base_dir.d, "src/tapki.h").d);
     Str source = ReadFile(PathJoin(base_dir.d, "src/tapki.c").d);
     const char* output = PathJoin(base_dir.d, "tapki.h").d;
+
     size_t firstLine = StrFind(source.d, "\n", 0);
     WriteFile(output, F("%s\n\n#ifndef TAPKI_IMPLEMENTATION\n%s#endif //TAPKI_IMPLEMENTATION\n", header.d, source.d + firstLine).d);
 end:

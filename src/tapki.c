@@ -1,4 +1,4 @@
-﻿#include "tapki.h"
+#include "tapki.h"
 
 #include <assert.h>
 #include <errno.h>
