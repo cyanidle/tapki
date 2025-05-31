@@ -576,7 +576,7 @@ static void __tpk_cli_clean(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiC
 {
     size_t count = 0;
     const TapkiCLI* curr = cli;
-    while(curr->names) {
+    while(curr->name) {
         count++;
         curr++;
     }
@@ -598,7 +598,7 @@ static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCL
     {
         size_t count = 0;
         const TapkiCLI* curr = _source_spec;
-        while(curr->names) {
+        while(curr->name || curr->program) {
             count++;
             curr++;
         }
@@ -612,7 +612,7 @@ static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCL
     }
     TapkiArena* temp = TapkiArenaCreate(256);
     TapkiVecForEach(&ctx->_storage, it) {
-        FrameF("Parse CLI argument spec (#%zu): %s", it->orig - _source_spec, it->orig->names) {
+        FrameF("Parse CLI argument spec (#%zu): %s", it->orig - _source_spec, it->orig->name) {
             if (it->orig->program) {
                 if (ctx->prog_opt.program) {
                     Die("Program option already specified");
@@ -625,12 +625,12 @@ static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCL
             }
             for (__tpk_cli_priv* check = it + 1; check != ctx->_storage.d + ctx->_storage.size; ++check) {
                 if (check->orig->data == it->orig->data) {
-                    Die("Conflict: output &pointer already used in argument: %s", check->orig->names);
+                    Die("Conflict: output &pointer already used in argument: %s", check->orig->name);
                 }
             }
             TapkiAssert(it->orig->data != NULL && "Pointer to variable missing");
             char *saveptr = NULL;
-            char *names = TapkiS(ar, it->orig->names).d;
+            char *names = TapkiS(ar, it->orig->name).d;
             size_t dashes;
             char* alias;
             bool was_pos = false;
@@ -699,8 +699,13 @@ static TapkiCLIVarsResult __TapkiCLI_ParseVars(TapkiArena *ar, __tpk_cli_context
     __tpk_cli_spec* pos = ctx->pos.d;
     __tpk_cli_spec* pos_end = ctx->pos.d + ctx->pos.size;
     size_t posIndex = 0;
+    bool ignoreNamed = false;
     for(int i = 1; i < argc; ++i) {
         const char* orig_arg = argv[i];
+        if (TAPKI_STRING_EQ(orig_arg, "--")) {
+            ignoreNamed = true;
+            continue;
+        }
         if (named) {
         parse_named:
             if (!__tpk_cli_parse(ar, named, i, orig_arg, &result.error)) {
@@ -710,27 +715,27 @@ static TapkiCLIVarsResult __TapkiCLI_ParseVars(TapkiArena *ar, __tpk_cli_context
             continue;
         }
         size_t dashes;
-        const char* arg = __tpk_cli_dashes((char*)orig_arg, &dashes);
-        if (dashes == 0) {
+        const char* stripped_arg = __tpk_cli_dashes((char*)orig_arg, &dashes);
+        if (ignoreNamed || dashes == 0) {
             if (pos == pos_end) {
-                result.error = TapkiF(ar, "unexpected positional argument (#%d): %s", i, arg);
+                result.error = TapkiF(ar, "unexpected positional argument (#%d): %s", i, stripped_arg);
                 return result;
             }
-            if (!__tpk_cli_parse(ar, pos, i, arg, &result.error)) {
+            if (!__tpk_cli_parse(ar, pos, i, orig_arg, &result.error)) {
                 return result;
             }
             if (!pos->info->orig->many) {
                 pos++;
             }
         } else if (dashes < 3) {
-            const char* eq = strchr(arg, '=');
-            char* lookup = (char*)arg;
+            const char* eq = strchr(stripped_arg, '=');
+            char* lookup = (char*)stripped_arg;
             if (eq) {
-                arg = eq + 1;
-                lookup = TapkiS(ar, arg).d;
-                lookup[eq - arg] = 0;
+                stripped_arg = eq + 1;
+                lookup = TapkiS(ar, stripped_arg).d;
+                lookup[eq - stripped_arg] = 0;
             }
-            named = __tpk_cli_named_Find(&ctx->named, arg);
+            named = __tpk_cli_named_Find(&ctx->named, stripped_arg);
             if (!named) {
                 result.error = TapkiF(ar, "unknown argument (#%d): %s", i, orig_arg);
                 return result;
@@ -764,7 +769,7 @@ static TapkiCLIVarsResult __TapkiCLI_ParseVars(TapkiArena *ar, __tpk_cli_context
     }
     VecForEach(&ctx->_storage, spec) {
         if (spec->orig->required && !spec->hits) {
-            result.error = TapkiF(ar, "missing argument: %s", spec->orig->names);
+            result.error = TapkiF(ar, "missing argument: %s", spec->orig->name);
             return result;
         }
     }
@@ -804,7 +809,12 @@ static size_t __tpk_term_width() {
 static TapkiStr __TapkiCLI_Usage(TapkiArena *ar, __tpk_cli_context* ctx, int argc, char **argv)
 {
     size_t offset = TapkiStrRevFind(argv[0], __tpk_sep);
-    TapkiStr result = TapkiS(ar, argv[0] + (offset == Tapki_npos ? 0 : offset + 1));
+    TapkiStr result = {0};
+    if (ctx->prog_opt.name) {
+        result = TapkiS(ar, ctx->prog_opt.name);
+    } else {
+        result = TapkiS(ar, argv[0] + (offset == Tapki_npos ? 0 : offset + 1));
+    }
     TapkiVecForEach(&ctx->named, named) {
         const TapkiCLI* cli = named->value.info->orig;
         if (named->value.info->hits++) continue;
@@ -896,6 +906,9 @@ static TapkiStr __TapkiCLI_Help(TapkiArena *ar, __tpk_cli_context* ctx)
             info->hits = 0;
     }
     TapkiStr result = {0};
+    if (ctx->prog_opt.help) {
+        TapkiStrAppend(ar, &result, ctx->prog_opt.help, "\n\n");
+    }
     {
         TapkiStrAppend(ar, &result, "positional arguments:\n");
         TapkiVecForEach(&ctx->pos, pos) {

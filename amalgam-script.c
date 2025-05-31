@@ -39,6 +39,7 @@ int main(int argc, char** argv) {
         {"--test", &test, .flag = true, .help = "help: bbbbbbbbbbbb"},
         {"--kek", &kek, .help = "help: ccccccccccccc"},
         {"--val", &vals, .int64 = true, .many = true, .help = "help: dddddddddd"},
+        {"renamed_prog", .program = true, .help = "Hello, program help!"},
         {0},
     };
     int ret = ParseCLI(cli, argc, argv);

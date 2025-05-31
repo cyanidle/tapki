@@ -146,7 +146,7 @@ typedef struct TapkiCLIVarsResult {
 } TapkiCLIVarsResult;
 
 typedef struct TapkiCLI {
-    const char* names;
+    const char* name; // pos_arg_name,pos_arg_name2 / --named,-n,--named2
     void* data; // pointer to variable of fitting type
     // all optional:
     const char* help;
