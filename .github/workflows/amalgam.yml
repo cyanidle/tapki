@@ -21,6 +21,5 @@ jobs:
         git config user.name 'Auto Doronin'
         git config user.email 'lyosha.doronin@gmail.com'
         git commit -a -m "Run amalgam"
-        git pushenv:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
