@@ -1,11 +1,7 @@
 name: Amalgam Script
 
 on:
-  push:
-    paths:
-      - '**/*.c'
-      - '**/*.h'
-      - '.github/workflows/*.yml'
+  - push
 
 jobs:
   amalgam:
