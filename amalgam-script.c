@@ -22,7 +22,9 @@ void Test_Maps(Arena* arena) {
 void test() {
     Frame() {
         Arena* arena = ArenaCreate(1024 * 20);
-        Test_Maps(arena);
+        FrameF("Maps") {
+            Test_Maps(arena);
+        }
         ArenaFree(arena);
     }
 }
