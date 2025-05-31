@@ -28,18 +28,11 @@ void test() {
 }
 
 int main(int argc, char** argv) {
-    Arena* arena = ArenaCreate(1024 * 20);
     test();
+    Arena* arena = ArenaCreate(1024 * 20);
     Str base_dir = S(".");
-    bool test = false;
-    Str kek = {0};
-    IntVec vals = {0};
     CLI cli[] = {
-        {"dir", &base_dir, .help = "help: aaaaaaaaaaaaaaaaa"},
-        {"--test", &test, .flag = true, .help = "help: bbbbbbbbbbbb"},
-        {"--kek", &kek, .help = "help: ccccccccccccc"},
-        {"--val", &vals, .int64 = true, .many = true, .help = "help: dddddddddd"},
-        {"renamed_prog", .program = true, .help = "Hello, program help!"},
+        {"dir", &base_dir, .help = "Root of tapki repository"},
         {0},
     };
     int ret = ParseCLI(cli, argc, argv);
@@ -48,6 +41,9 @@ int main(int argc, char** argv) {
     }
     Str header = ReadFile(PathJoin(base_dir.d, "src/tapki.h").d);
     Str source = ReadFile(PathJoin(base_dir.d, "src/tapki.c").d);
+    const char* output = PathJoin(base_dir.d, "tapki.h").d;
+    size_t firstLine = StrFind(source.d, "\n", 0);
+    WriteFile(output, F("%s\n\n#ifndef TAPKI_IMPLEMENTATION\n%s#endif //TAPKI_IMPLEMENTATION\n", header.d, source.d + firstLine).d);
 end:
     ArenaFree(arena);
     return ret;
