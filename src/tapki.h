@@ -129,7 +129,7 @@ void TapkiAppendFile(const char* file, const char* contents);
 // --- Tracebacks
 #define TapkiFrameF(fmt, ...) for( \
     __tpk_scope __scope = (__tpk_scope){__FILE__":"__TPK_STR(__LINE__), __func__}; \
-    !__scope.__f && (snprintf(__scope.msg, sizeof(__scope.msg), fmt ? fmt : "", ##__VA_ARGS__), __tpk_frame_start(&__scope), 1); \
+    !__scope.__f && (fmt ? snprintf(__scope.msg, sizeof(__scope.msg), fmt, ##__VA_ARGS__) : (void)0, __tpk_frame_start(&__scope), 1); \
     __tpk_frame_end(), __scope.__f = 1 \
 )
 #define TapkiFrame() TapkiFrameF(NULL)
