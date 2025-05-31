@@ -1,0 +1,28 @@
+name: Amalgam Script
+
+on:
+  push:
+    paths:
+      - '**/*.c'
+      - '**/*.h'
+      - '.github/workflows/*.yml'
+
+jobs:
+  amalgam:
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build
+      run: |
+        gcc amalgam-script.c -o amalgam-script
+        ./amalgam-script
+        git config user.name 'Auto Doronin'
+        git config user.email 'lyosha.doronin@gmail.com'
+        git commit -a -m "Run amalgam"
+        git push

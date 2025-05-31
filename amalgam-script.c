@@ -33,12 +33,17 @@ int main(int argc, char** argv) {
     test();
     Arena* arena = ArenaCreate(1024 * 20);
     Str base_dir = S(".");
+    bool test_only = false;
     CLI cli[] = {
         {"dir", &base_dir, .help = "Root of tapki repository"},
+        {"--test-only", &test_only, .flag = true},
         {0},
     };
     int ret = ParseCLI(cli, argc, argv);
     if (ret != 0) {
+        goto end;
+    }
+    if (test_only) {
         goto end;
     }
     Str header = ReadFile(PathJoin(base_dir.d, "src/tapki.h").d);
