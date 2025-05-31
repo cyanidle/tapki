@@ -172,7 +172,7 @@ TapkiStr TapkiCLI_Help(TapkiArena *ar, const TapkiCLI cli[]);
 // ---
 
 
-// Short-version API
+// Short API
 #ifndef TAPKI_FULL_NAMESPACE
 
 typedef TapkiArena Arena;
@@ -249,7 +249,7 @@ typedef TapkiCLI CLI;
 
 #endif
 
-// Short-version API END
+// Short API END
 
 
 
