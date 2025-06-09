@@ -849,7 +849,7 @@ bool __tapki_vec_shrink(TapkiArena* ar, void* _vec, size_t tsz)
         vec->cap -= diff;
         return true;
     } else {
-        return false
+        return false;
     }
 }
 
