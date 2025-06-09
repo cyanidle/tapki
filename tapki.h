@@ -50,6 +50,7 @@ void TapkiArenaFree(TapkiArena* arena);
 
 // --- Vectors
 #define TapkiVec(type) struct { type* d; size_t size; size_t cap; }
+#define TapkiVecShrink(arena, vec) __tapki_vec_shrink(arena, (vec), TapkiVecS(vec))
 #define TapkiVecT(vec) __typeof__(*(vec)->d)
 #define TapkiVecS(vec) sizeof(*(vec)->d)
 #define TapkiVecA(vec) _Alignof(TapkiVecT(vec))
@@ -185,6 +186,7 @@ typedef TapkiIntVec IntVec;
 typedef TapkiCLI CLI;
 
 #define Vec(type)                       TapkiVec(type)
+#define VecShrink(vec)                  TapkiVecShrink(arena, vec)
 #define VecAppend(vec, ...)             TapkiVecAppend(arena, vec, ##__VA_ARGS__)
 #define VecPush(vec)                    TapkiVecPush(arena, vec)
 #define VecPop(vec)                     TapkiVecPop(vec)
@@ -320,6 +322,7 @@ TapkiStr __tpk_path_join(TapkiArena* ar, const char** parts, size_t count);
 void* __tapki_vec_insert(TapkiArena* ar, void* _vec, size_t idx, size_t tsz, size_t al);
 char* __tapki_vec_reserve(TapkiArena* ar, void* _vec, size_t count, size_t tsz, size_t al);
 char* __tapki_vec_resize(TapkiArena* ar, void* _vec, size_t count, size_t tsz, size_t al);
+bool __tapki_vec_shrink(TapkiArena* ar, void* _vec, size_t tsz);
 void __tapki_vec_append(TapkiArena* ar, void* _vec, void* data, size_t count, size_t tsz, size_t al);
 TapkiStr* __tapkis_append(TapkiArena *ar, TapkiStr* target, const char **src, size_t count);
 void __tapki_vec_erase(void* _vec, size_t idx, size_t tsz);
@@ -833,6 +836,21 @@ char *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, 
             vec->d[count - 1] = 0;
     }
     return vec->d;
+}
+
+bool __tapki_vec_shrink(TapkiArena* ar, void* _vec, size_t tsz)
+{
+    __TapkiVec* vec = (__TapkiVec*)_vec;
+    uintptr_t arenaEnd = (uintptr_t)(ar->current->buff + ar->ptr);
+    uintptr_t vecEnd = (uintptr_t)(vec->d + vec->cap * tsz);
+    size_t diff = vec->cap - vec->size;
+    if (arenaEnd == vecEnd) {
+        ar->ptr -= tsz * diff;
+        vec->cap -= diff;
+        return true;
+    } else {
+        return false
+    }
 }
 
 char *__tapki_vec_resize(TapkiArena *ar, void *_vec, size_t count, size_t tsz, size_t al)
