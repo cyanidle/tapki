@@ -986,11 +986,34 @@ typedef struct {
     bool is_long;
 } __tpk_cli_spec;
 
-TapkiMapDeclare(__tpk_cli_named, char*, __tpk_cli_spec);
-TapkiMapImplement(__tpk_cli_named, TAPKI_STRING_LESS, TAPKI_STRING_EQ);
+typedef struct {
+    const char* name;
+    __tpk_cli_spec value;
+} __tpk_cli_named;
+
+typedef TapkiVec(__tpk_cli_named) __tpk_cli_named_vec;
+
+static __tpk_cli_spec* __tpk_cli_named_Find(__tpk_cli_named_vec* vec, const char* name) {
+    TapkiVecForEach(vec, it) {
+        if (TAPKI_STRING_EQ(it->name, name)) {
+            return &it->value;
+        }
+    }
+    return NULL;
+}
+
+static __tpk_cli_spec* __tpk_cli_named_At(Arena* arena, __tpk_cli_named_vec* vec, const char* name) {
+    __tpk_cli_spec* res = __tpk_cli_named_Find(vec, name);
+    if (!res) {
+        __tpk_cli_named* pushed = TapkiVecPush(arena, vec);
+        pushed->name = name;
+        res = &pushed->value;
+    }
+    return res;
+}
 
 typedef struct {
-    __tpk_cli_named named;
+    __tpk_cli_named_vec named;
     TapkiVec(__tpk_cli_spec) pos;
     TapkiVec(__tpk_cli_priv) _storage;
     bool need_help;
@@ -1222,6 +1245,10 @@ static TapkiCLIVarsResult __TapkiCLI_ParseVars(TapkiArena *ar, __tpk_cli_context
             return result;
         }
     }
+    if (named) {
+        result.error = TapkiF(ar, "expected value for: %s", named->info->orig->name);
+        return result;
+    }
     VecForEach(&ctx->_storage, spec) {
         if (spec->orig->required && !spec->hits) {
             result.error = TapkiF(ar, "missing argument: %s", spec->orig->name);
@@ -1316,7 +1343,7 @@ again:
     } else {
         wrap = (int)rlen;
     }
-    TapkiStrAppendF(ar, out, "%-*s  %.*s\n", (int)pad, args, wrap, help);
+    TapkiStrAppendF(ar, out, "  %-*s  %.*s\n", (int)pad, args, wrap, help);
     if (rlen != wrap) {
         help += wrap;
         args = "";
@@ -1376,6 +1403,7 @@ static TapkiStr __TapkiCLI_Help(TapkiArena *_ar, __tpk_cli_context* ctx)
             if (named->alen > pad) pad = (int)named->alen;
         }
     }
+    pad += 2; // 2 spaces
     TapkiStrAppend(temp, &result, "positional arguments:\n");
     TapkiVecForEach(&pos_pairs, pos) {
         __tpk_cli_wrapping_help(pad, termw, temp, &result, pos->args, pos->help);
