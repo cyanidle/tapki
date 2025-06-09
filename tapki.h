@@ -18,8 +18,8 @@ extern "C" {
 #ifdef __GNUC__
     #define TAPKI_NORETURN __attribute__((noreturn))
     #define TAPKI_UNLIKELY(x) __builtin_expect(!!(x), 0)
-    #define _TAPKI_ALLOC_ATTR(sz, al) __attribute__((malloc, alloc_size(sz), alloc_align(al)))
-    #define _TAPKI_FMT_ATTR(fmt, args) __attribute__((format(printf, fmt, args)))
+    #define TAPKI_ALLOC_ATTR(sz, al) __attribute__((malloc, alloc_size(sz), alloc_align(al)))
+    #define TAPKI_FMT_ATTR(fmt, args) __attribute__((format(printf, fmt, args)))
 #else
     #if defined(_MSC_VER)
         #define TAPKI_NORETURN __declspec(noreturn)
@@ -27,13 +27,13 @@ extern "C" {
         #define TAPKI_NORETURN
     #endif
     #define TAPKI_UNLIKELY(x) x
-    #define _TAPKI_ALLOC_ATTR(sz, al)
-    #define _TAPKI_FMT_ATTR(fmt, args)
+    #define TAPKI_ALLOC_ATTR(sz, al)
+    #define TAPKI_FMT_ATTR(fmt, args)
 #endif
 
 // If TAPKI_FULL_NAMESPACE is not defined -> you can use Public API without Tapki prefix
 
-_TAPKI_FMT_ATTR(1, 2) TAPKI_NORETURN
+TAPKI_FMT_ATTR(1, 2) TAPKI_NORETURN
 void TapkiDie(const char* __restrict__ fmt, ...);
 #define TapkiAssert(...) TapkiFrame() { if (!(__VA_ARGS__)) Die("Assertion failed: " #__VA_ARGS__); }
 
@@ -41,7 +41,7 @@ void TapkiDie(const char* __restrict__ fmt, ...);
 typedef struct TapkiArena TapkiArena;
 
 TapkiArena* TapkiArenaCreate(size_t chunkSize);
-_TAPKI_ALLOC_ATTR(2, 3) void* TapkiArenaAllocAligned(TapkiArena* arena, size_t size, size_t align);
+TAPKI_ALLOC_ATTR(2, 3) void* TapkiArenaAllocAligned(TapkiArena* arena, size_t size, size_t align);
 void* TapkiArenaAlloc(TapkiArena* arena, size_t size);
 char* TapkiArenaAllocChars(TapkiArena* arena, size_t count);
 void TapkiArenaClear(TapkiArena* arena);
@@ -101,7 +101,7 @@ TapkiMapDeclare(TapkiStrMap, char*, TapkiStr);
 #define TapkiStrAppend(arena, s, ...) __tapkis_append((arena), (s), __TapkiArr(const char*, __VA_ARGS__))
 
 TapkiStr TapkiStrSub(TapkiArena *ar, const char* target, size_t from, size_t to);
-_TAPKI_FMT_ATTR(3, 4) TapkiStr* TapkiStrAppendF(TapkiArena *ar, TapkiStr* str, const char* __restrict__ fmt, ...);
+TAPKI_FMT_ATTR(3, 4) TapkiStr* TapkiStrAppendF(TapkiArena *ar, TapkiStr* str, const char* __restrict__ fmt, ...);
 TapkiStr* TapkiStrAppendVF(TapkiArena *ar, TapkiStr* str, const char* __restrict__ fmt, va_list list);
 size_t TapkiStrFind(const char* target, const char* what, size_t offset);
 TapkiStr TapkiStrCopy(TapkiArena *ar, const char* target, size_t len);
@@ -110,7 +110,7 @@ bool TapkiStrContains(const char* target, const char* what);
 bool TapkiStrStartsWith(const char* target, const char* what);
 bool TapkiStrEndsWith(const char* target, const char* what);
 TapkiStrVec TapkiStrSplit(TapkiArena *ar, const char* target, const char *delim);
-_TAPKI_FMT_ATTR(2, 3) TapkiStr TapkiF(TapkiArena* ar, const char* __restrict__ fmt, ...);
+TAPKI_FMT_ATTR(2, 3) TapkiStr TapkiF(TapkiArena* ar, const char* __restrict__ fmt, ...);
 TapkiStr TapkiVF(TapkiArena* ar, const char* __restrict__ fmt, va_list list);
 TapkiStr TapkiS(TapkiArena* ar, const char* s);
 
