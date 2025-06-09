@@ -211,7 +211,7 @@ typedef TapkiCLI CLI;
 #define ToFloat(str)                    TapkiToFloat(str)
 
 #define StrAppend(s, part, ...)         TapkiStrAppend(arena, s, part, ##__VA_ARGS__)
-#define StrAppendF(s, fmt, ...)         TapkiStrAppendF(arena, fmt, ##__VA_ARGS__)
+#define StrAppendF(s, fmt, ...)         TapkiStrAppendF(arena, s, fmt, ##__VA_ARGS__)
 #define StrSplit(s, delim)              TapkiStrSplit(arena, s, delim)
 #define StrSub(s, from, to)             TapkiStrSub(arena, s, from, to)
 #define StrFind(s, needle, offs)        TapkiStrFind(s, needle, offs)
