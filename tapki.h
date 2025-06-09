@@ -148,8 +148,9 @@ typedef struct TapkiCLIVarsResult {
 typedef struct TapkiCLI {
     const char* name; // pos_arg_name,pos_arg_name2 / --named,-n,--named2
     void* data; // pointer to variable of fitting type
-    // all optional:
+    // all other are optional:
     const char* help;
+    const char* metavar;
     bool flag; // kw-only: Treat as a switch
     bool int64; // Parse as int64, not Str
     bool required;
@@ -420,7 +421,7 @@ static inline void* __tapki_vec_at(void* _vec, size_t pos, size_t tsz) {
 
 
 
-#ifndef TAPKI_IMPLEMENTATION
+#ifdef TAPKI_IMPLEMENTATION
 
 
 #include <assert.h>
@@ -964,6 +965,9 @@ int32_t TapkiToI32(const char *s)
 
 typedef struct {
     const TapkiCLI* orig;
+    const char* metavar;
+    const char* firstAlias;
+    int firstAliasDashes;
     int hits;
 } __tpk_cli_priv;
 
@@ -1010,7 +1014,7 @@ static void __tpk_cli_clean(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiC
 static void __tpk_cli_reset(TapkiArena *ar, __tpk_cli_context* ctx)
 {
     TapkiVecForEach(&ctx->_storage, it) {
-        *it = (__tpk_cli_priv){it->orig};
+        it->hits = 0;
     }
 }
 
@@ -1029,13 +1033,17 @@ static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCL
         ctx->_storage.size = count;
         curr = _source_spec;
         TapkiVecForEach(&ctx->_storage, it) {
-            *it = (__tpk_cli_priv){curr++};
+            *it = (__tpk_cli_priv){curr, curr->metavar};
+            curr++;
         }
         TapkiVecAppend(ar, &ctx->_storage, (__tpk_cli_priv){&ctx->help_opt});
     }
     TapkiArena* temp = TapkiArenaCreate(256);
     TapkiVecForEach(&ctx->_storage, it) {
         FrameF("Parse CLI argument spec (#%zu): %s", it->orig - _source_spec, it->orig->name) {
+            if (it->orig->flag && it->orig->metavar) {
+                Die("'flag' options cannot have 'metavar' name");
+            }
             if (it->orig->program) {
                 if (ctx->prog_opt.program) {
                     Die("Program option already specified");
@@ -1061,6 +1069,12 @@ static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCL
             bool last_pos_required = false;
             while((alias = strtok_r(saveptr ? NULL : names, ",", &saveptr))) {
                 alias = (char*)__tpk_cli_dashes(alias, &dashes);
+                if (!it->firstAlias) {
+                    it->firstAlias = alias;
+                }
+                if (!it->orig->flag && !it->metavar) {
+                    it->metavar = TapkiF(ar, "<%s>", it->firstAlias).d;
+                }
                 if (dashes > 2) {
                     Die("Unexpected '-' count: %zu", dashes);
                 }
@@ -1072,6 +1086,9 @@ static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCL
                     __tpk_cli_spec* named = __tpk_cli_named_At(ar, &ctx->named, alias);
                     *named = (__tpk_cli_spec){it, alias};
                     named->is_long = dashes == 2;
+                    if (!it->firstAliasDashes) {
+                        it->firstAliasDashes = dashes;
+                    }
                 } else {
                     if (was_pos) {
                         Die("Positional arguments cannot have aliases (e.g. 'name1,name2')");
@@ -1247,19 +1264,23 @@ static TapkiStr __TapkiCLI_Usage(TapkiArena *ar, __tpk_cli_context* ctx, int arg
     TapkiVecForEach(&ctx->named, named) {
         const TapkiCLI* cli = named->value.info->orig;
         if (named->value.info->hits++) continue;
-        const char* dashes = named->value.is_long ? "--" : "-";
-        const char* metavar = cli->flag ? "" : TapkiF(ar, " <%s>", named->value.alias).d;
+        const char* dashes = named->value.info->firstAliasDashes == 2 ? "--" : "-";
+        const char* metavar = named->value.info->metavar;
         const char* dots = cli->many ? "..." : "";
         const char* lbracket = cli->required ? "" : "[";
         const char* rbracket = cli->required ? "" : "]";
-        TapkiStrAppend(ar, &result, " ", lbracket, dashes, named->value.alias, metavar, rbracket, dots);
+        TapkiStrAppend(ar, &result, " ", lbracket, dashes, named->value.info->firstAlias);
+        if (metavar) {
+            TapkiStrAppend(ar, &result, " ", metavar);
+        }
+        TapkiStrAppend(ar, &result, rbracket, dots);
     }
     TapkiVecForEach(&ctx->pos, pos) {
         const TapkiCLI* cli = pos->info->orig;
         const char* lbracket = cli->required ? "" : "[";
         const char* rbracket = cli->required ? "" : "]";
         const char* dots = cli->many ? "..." : "";
-        TapkiStrAppend(ar, &result, " ", lbracket, pos->alias, rbracket, dots);
+        TapkiStrAppend(ar, &result, " ", lbracket, pos->info->metavar ? pos->info->metavar : pos->info->firstAlias, rbracket, dots);
     }
     return result;
 }
@@ -1306,7 +1327,6 @@ static TapkiStr __TapkiCLI_Help(TapkiArena *ar, __tpk_cli_context* ctx)
                 pad = (int)len;
         }
         size_t lastLen = 0;
-        size_t metaVarLen = 0;
         __tpk_cli_priv* info = NULL;
         TapkiVecForEach(&ctx->named, named) {
             info = named->value.info;
@@ -1315,18 +1335,16 @@ static TapkiStr __TapkiCLI_Help(TapkiArena *ar, __tpk_cli_context* ctx)
                 if (lastLen > pad) {
                     pad = (int)lastLen;
                 }
-                metaVarLen = 0;
                 info->hits = 0;
                 lastLen = 0;
             } else {
                 lastLen += 2; // comma + space
             }
-            size_t aliasLen = strlen(named->value.alias);
-            if (!lastLen && !info->orig->flag) {
-                metaVarLen = aliasLen + 3; // _<var>
+            lastLen += strlen(named->value.alias);
+            const char* meta = named->value.info->metavar;
+            if (meta) {
+                lastLen += strlen(meta) + 1;
             }
-            lastLen += metaVarLen;
-            lastLen += aliasLen;
             lastLen += named->value.is_long ? 2 : 1; // -- or -
         }
         if (lastLen > pad)
@@ -1344,7 +1362,6 @@ static TapkiStr __TapkiCLI_Help(TapkiArena *ar, __tpk_cli_context* ctx)
             __tpk_cli_wrapping_help(pad, termw, ar, &result, pos->alias, pos->info->orig->help);
         }
         TapkiStrAppend(ar, &result, "\noptions:\n");
-        const char* metavar = "";
         TapkiStr lastNamedArg = {0};
         const char* lastHelp = "";
         TapkiVecForEach(&ctx->named, named) {
@@ -1355,12 +1372,14 @@ static TapkiStr __TapkiCLI_Help(TapkiArena *ar, __tpk_cli_context* ctx)
                     lastNamedArg.size = 0;
                 }
                 lastHelp = spec->info->orig->help;
-                metavar = spec->info->orig->flag ? "" : TapkiF(ar, " <%s>", named->key).d;
             } else {
                 TapkiStrAppend(ar, &lastNamedArg, ", ");
             }
-            const char* dash = spec->is_long ? "--" : "-";
-            TapkiStrAppend(ar, &lastNamedArg, dash, spec->alias, metavar);
+            const char* dash = named->value.is_long ? "--" : "-";
+            TapkiStrAppend(ar, &lastNamedArg, dash, spec->alias);
+            if (spec->info->metavar) {
+                TapkiStrAppend(ar, &lastNamedArg, " ", spec->info->metavar);
+            }
         }
         if (lastNamedArg.size) {
             __tpk_cli_wrapping_help(pad, termw, ar, &result, lastNamedArg.d, lastHelp);

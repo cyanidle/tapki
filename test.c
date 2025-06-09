@@ -1,4 +1,5 @@
-﻿#include "src/tapki.c"
+﻿#define TAPKI_IMPLEMENTATION
+#include "tapki.h"
 
 #define ASSERT(...) Frame() { if (!(__VA_ARGS__)) Die("Test failed: " #__VA_ARGS__); } (void)0
 
@@ -19,7 +20,7 @@ void Test_Maps(Arena* arena) {
     ASSERT(strcmp(StrMap_Find(&map, "Kek")->d, "LolKek") == 0);
 }
 
-void test() {
+void Test() {
     Frame() {
         Arena* arena = ArenaCreate(1024 * 20);
         FrameF("Maps") {
@@ -30,28 +31,21 @@ void test() {
 }
 
 int main(int argc, char** argv) {
-    test();
     Arena* arena = ArenaCreate(1024 * 20);
     Str base_dir = S(".");
-    bool test_only = false;
+    Str test = S(".");
+    Str file = S(".");
     CLI cli[] = {
-        {"dir", &base_dir, .help = "Root of tapki repository"},
-        {"--test-only", &test_only, .flag = true},
+        {"dir", &base_dir, .help = "Example positional"},
+        {"--test,-t", &test, .help = "Example named"},
+        {"--file,-f", &file, .metavar = "FILE", .help = "Example named"},
         {0},
     };
+    Test();
     int ret = ParseCLI(cli, argc, argv);
     if (ret != 0) {
         goto end;
     }
-    if (test_only) {
-        goto end;
-    }
-    Str header = ReadFile(PathJoin(base_dir.d, "src/tapki.h").d);
-    Str source = ReadFile(PathJoin(base_dir.d, "src/tapki.c").d);
-    const char* output = PathJoin(base_dir.d, "tapki.h").d;
-
-    size_t firstLine = StrFind(source.d, "\n", 0);
-    WriteFile(output, F("%s\n\n#ifndef TAPKI_IMPLEMENTATION\n%s#endif //TAPKI_IMPLEMENTATION\n", header.d, source.d + firstLine).d);
 end:
     ArenaFree(arena);
     return ret;
