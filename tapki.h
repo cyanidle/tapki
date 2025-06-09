@@ -103,6 +103,7 @@ TapkiStr TapkiStrSub(TapkiArena *ar, const char* target, size_t from, size_t to)
 _TAPKI_FMT_ATTR(3, 4) TapkiStr* TapkiStrAppendF(TapkiArena *ar, TapkiStr* str, const char* __restrict__ fmt, ...);
 TapkiStr* TapkiStrAppendVF(TapkiArena *ar, TapkiStr* str, const char* __restrict__ fmt, va_list list);
 size_t TapkiStrFind(const char* target, const char* what, size_t offset);
+TapkiStr TapkiStrCopy(TapkiArena *ar, const char* target, size_t len);
 size_t TapkiStrRevFind(const char* target, const char* what);
 bool TapkiStrContains(const char* target, const char* what);
 bool TapkiStrStartsWith(const char* target, const char* what);
@@ -216,6 +217,7 @@ typedef TapkiCLI CLI;
 #define StrSplit(s, delim)              TapkiStrSplit(arena, s, delim)
 #define StrSub(s, from, to)             TapkiStrSub(arena, s, from, to)
 #define StrFind(s, needle, offs)        TapkiStrFind(s, needle, offs)
+#define StrCopy(chars, len)             TapkiStrCopy(arena, chars, len)
 #define StrRevFind(s, needle)           TapkiStrRevFind(s, needle)
 #define StrContains(s, needle)          TapkiStrContains(s, needle)
 #define StrStartsWith(s, needle)        TapkiStrStartsWith(s, needle)
@@ -440,9 +442,9 @@ static const char* __tpk_sep = "\\"
 static const char* __tpk_sep = "/";
 #endif
 
-#define _TAPKI_MEMSET(dest, src, count) if (src && count) memcpy(dest, src, count)
+#define _TAPKI_MEMCPY(dest, src, count) if (src && count) memcpy(dest, src, count)
 
-    _Thread_local __tpk_frames __tpk_gframes;
+_Thread_local __tpk_frames __tpk_gframes;
 
 void __tpk_frame_start(__tpk_scope *scope)
 {
@@ -540,7 +542,7 @@ void __tapki_vec_append(TapkiArena *ar, void *_vec, void *data, size_t count, si
 {
     __TapkiVec* vec = (__TapkiVec*)_vec;
     __tapki_vec_reserve(ar, vec, vec->size + count, tsz, al);
-    _TAPKI_MEMSET(vec->d + vec->size * tsz, data, count * tsz);
+    _TAPKI_MEMCPY(vec->d + vec->size * tsz, data, count * tsz);
     vec->size += count;
     if (tsz == 1 && vec->d)
         vec->d[vec->size] = 0;
@@ -556,7 +558,7 @@ TapkiStr* __tapkis_append(TapkiArena *ar, TapkiStr *target, const char** strs, s
     TapkiVecReserve(ar, target, target->size + total + 1);
     for (size_t i = 0; i < count; ++i) {
         void* out = target->d + target->size;
-        _TAPKI_MEMSET(out, strs[i], lens[i]);
+        _TAPKI_MEMCPY(out, strs[i], lens[i]);
         target->size += lens[i];
     }
     if (target->d) {
@@ -575,7 +577,7 @@ TapkiStr TapkiStrSub(TapkiArena *ar, const char *target, size_t from, size_t to)
     TapkiStr res = {0};
     size_t diff = (size_t)(to - from);
     TapkiVecReserve(ar, &res, diff);
-    _TAPKI_MEMSET(res.d, target + from, diff);
+    _TAPKI_MEMCPY(res.d, target + from, diff);
     return res;
 }
 
@@ -592,6 +594,13 @@ static const char *__rev_strstr(const char *haystack, const char *needle) {
         haystack = p + 1;
     }
     return result;
+}
+
+TapkiStr TapkiStrCopy(TapkiArena *ar, const char* target, size_t len)
+{
+    TapkiStr res = __tapkis_withn(ar, len);
+    _TAPKI_MEMCPY(res.d, target, len);
+    return res;
 }
 
 size_t TapkiStrFind(const char *target, const char *what, size_t offset)
@@ -817,7 +826,7 @@ char *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, 
             ar->ptr += (uintptr_t)(vecNewEnd - vecEnd);
         } else {
             char* newData = (char*)TapkiArenaAllocAligned(ar, vec->cap * tsz, al);
-            _TAPKI_MEMSET(newData, vec->d, vec->size * tsz);
+            _TAPKI_MEMCPY(newData, vec->d, vec->size * tsz);
             vec->d = newData;
         }
         if (tsz == 1 && vec->d)
@@ -889,7 +898,7 @@ TapkiStr TapkiS(TapkiArena *ar, const char *s)
 {
     size_t len = strlen(s);
     TapkiStr result = __tapkis_withn(ar, len);
-    _TAPKI_MEMSET(result.d, s, len);
+    _TAPKI_MEMCPY(result.d, s, len);
     return result;
 }
 
@@ -1316,76 +1325,68 @@ again:
 }
 
 
-static TapkiStr __TapkiCLI_Help(TapkiArena *ar, __tpk_cli_context* ctx)
+static TapkiStr __TapkiCLI_Help(TapkiArena *_ar, __tpk_cli_context* ctx)
 {
+    TapkiArena* temp = TapkiArenaCreate(2048);
+    typedef struct {
+        const char* args;
+        size_t alen;
+        const char* help;
+    } __tpk_help_pair;
+    TapkiVec(__tpk_help_pair) pos_pairs = {0};
+    TapkiVec(__tpk_help_pair) named_pairs = {0};
     size_t termw = __tpk_term_width();
-    int pad = 0;
-    {
-        TapkiVecForEach(&ctx->pos, pos) {
-            size_t len = strlen(pos->alias);
-            if (len > pad)
-                pad = (int)len;
-        }
-        size_t lastLen = 0;
-        __tpk_cli_priv* info = NULL;
-        TapkiVecForEach(&ctx->named, named) {
-            info = named->value.info;
-            int hits = info->hits++;
-            if (hits == 0) {
-                if (lastLen > pad) {
-                    pad = (int)lastLen;
-                }
-                info->hits = 0;
-                lastLen = 0;
-            } else {
-                lastLen += 2; // comma + space
-            }
-            lastLen += strlen(named->value.alias);
-            const char* meta = named->value.info->metavar;
-            if (meta) {
-                lastLen += strlen(meta) + 1;
-            }
-            lastLen += named->value.is_long ? 2 : 1; // -- or -
-        }
-        if (lastLen > pad)
-            pad = (int)lastLen;
-        if (info)
-            info->hits = 0;
-    }
     TapkiStr result = {0};
     if (ctx->prog_opt.help) {
-        TapkiStrAppend(ar, &result, ctx->prog_opt.help, "\n\n");
+        TapkiStrAppend(temp, &result, ctx->prog_opt.help, "\n\n");
+    }
+    TapkiVecForEach(&ctx->pos, pos) {
+        *TapkiVecPush(temp, &pos_pairs) = (__tpk_help_pair){pos->alias, strlen(pos->alias), pos->info->orig->help};
     }
     {
-        TapkiStrAppend(ar, &result, "positional arguments:\n");
-        TapkiVecForEach(&ctx->pos, pos) {
-            __tpk_cli_wrapping_help(pad, termw, ar, &result, pos->alias, pos->info->orig->help);
-        }
-        TapkiStrAppend(ar, &result, "\noptions:\n");
         TapkiStr lastNamedArg = {0};
         const char* lastHelp = "";
         TapkiVecForEach(&ctx->named, named) {
             __tpk_cli_spec* spec = &named->value;
             if (!spec->info->hits++) {
                 if (lastNamedArg.size) {
-                    __tpk_cli_wrapping_help(pad, termw, ar, &result, lastNamedArg.d, lastHelp);
-                    lastNamedArg.size = 0;
+                    *TapkiVecPush(temp, &named_pairs) = (__tpk_help_pair){lastNamedArg.d, lastNamedArg.size, lastHelp};
+                    lastNamedArg = (TapkiStr){0};
                 }
                 lastHelp = spec->info->orig->help;
             } else {
-                TapkiStrAppend(ar, &lastNamedArg, ", ");
+                TapkiStrAppend(temp, &lastNamedArg, ", ");
             }
             const char* dash = named->value.is_long ? "--" : "-";
-            TapkiStrAppend(ar, &lastNamedArg, dash, spec->alias);
+            TapkiStrAppend(temp, &lastNamedArg, dash, spec->alias);
             if (spec->info->metavar) {
-                TapkiStrAppend(ar, &lastNamedArg, " ", spec->info->metavar);
+                TapkiStrAppend(temp, &lastNamedArg, " ", spec->info->metavar);
             }
         }
         if (lastNamedArg.size) {
-            __tpk_cli_wrapping_help(pad, termw, ar, &result, lastNamedArg.d, lastHelp);
+            *TapkiVecPush(temp, &named_pairs) = (__tpk_help_pair){lastNamedArg.d, lastNamedArg.size, lastHelp};
         }
     }
-    return result;
+    int pad = 0;
+    {
+        TapkiVecForEach(&pos_pairs, pos) {
+            if (pos->alen > pad) pad = (int)pos->alen;
+        }
+        TapkiVecForEach(&named_pairs, named) {
+            if (named->alen > pad) pad = (int)named->alen;
+        }
+    }
+    TapkiStrAppend(temp, &result, "positional arguments:\n");
+    TapkiVecForEach(&pos_pairs, pos) {
+        __tpk_cli_wrapping_help(pad, termw, temp, &result, pos->args, pos->help);
+    }
+    TapkiStrAppend(temp, &result, "\noptions:\n");
+    TapkiVecForEach(&named_pairs, named) {
+        __tpk_cli_wrapping_help(pad, termw, temp, &result, named->args, named->help);
+    }
+    TapkiStr final_result = TapkiStrCopy(_ar, result.d, result.size);
+    TapkiArenaFree(temp);
+    return final_result;
 }
 
 TapkiStr TapkiCLI_Usage(TapkiArena *ar, const TapkiCLI cli[], int argc, char **argv)
@@ -1456,7 +1457,7 @@ TapkiStr __tpk_path_join(TapkiArena *ar, const char **parts, size_t count)
 }
 
 
-#undef _TAPKI_MEMSET
+#undef _TAPKI_MEMCPY
 
 #ifdef __cplusplus
 }
