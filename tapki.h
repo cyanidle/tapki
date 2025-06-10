@@ -80,7 +80,7 @@ typedef TapkiVec(int64_t) TapkiIntVec;
     typedef V Name##_Value; \
     Name##_Value* Name##_Find(Name* map, Name##_Key key); \
     Name##_Value* Name##_At(TapkiArena* arena, Name* map, Name##_Key key); \
-    bool Name##_Erase(Name* map, Name##_Key key); \
+    bool Name##_Erase(Name* map, Name##_Key key) \
 
 #define TapkiMapKT(map) __typeof__((map)->d->key)
 #define TapkiMapVT(map) __typeof__((map)->d->value)
@@ -308,7 +308,7 @@ Name##_Value *Name##_Find(Name *map, Name##_Key key) {  \
 } \
 bool Name##_Erase(Name *map, Name##_Key key) { \
     return __tapki_map_erase(map, &key, &__##Name##_info); \
-}
+} bool Name##_Erase(Name *map, Name##_Key key)
 
 #define __TapkiArr(t, ...) (t[]){__VA_ARGS__}, PP_NARG(__VA_ARGS__)
 
@@ -810,7 +810,7 @@ bool __tapki_map_erase(void *_map, const void *key, const __tpk_map_info* info)
     }
 }
 
-TapkiMapImplement(TapkiStrMap, TAPKI_STRING_LESS, TAPKI_STRING_EQ)
+TapkiMapImplement(TapkiStrMap, TAPKI_STRING_LESS, TAPKI_STRING_EQ);
 
 char *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, size_t al)
 {
@@ -844,6 +844,9 @@ bool __tapki_vec_shrink(TapkiArena* ar, void* _vec, size_t tsz)
     uintptr_t arenaEnd = (uintptr_t)(ar->current->buff + ar->ptr);
     uintptr_t vecEnd = (uintptr_t)(vec->d + vec->cap * tsz);
     size_t diff = vec->cap - vec->size;
+    if (diff && tsz == 1) {
+        diff--;
+    }
     if (arenaEnd == vecEnd) {
         ar->ptr -= tsz * diff;
         vec->cap -= diff;
