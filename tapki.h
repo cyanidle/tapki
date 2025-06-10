@@ -78,7 +78,7 @@ typedef TapkiVec(int64_t) TapkiIntVec;
     typedef TapkiVec(Name##_Pair) Name; \
     typedef const K Name##_Key; \
     typedef V Name##_Value; \
-    Name##_Value* Name##_Find(Name* map, Name##_Key key); \
+    Name##_Value* Name##_Find(const Name* map, Name##_Key key); \
     Name##_Value* Name##_At(TapkiArena* arena, Name* map, Name##_Key key); \
     bool Name##_Erase(Name* map, Name##_Key key) \
 
@@ -89,11 +89,11 @@ TapkiMapDeclare(TapkiStrMap, char*, TapkiStr);
 
 #define TapkiMapImplement(Name, Less, Eq) TapkiMapImplement1(Name, Less, Eq)
 
-#define TAPKI_TRIVIAL_LESS(l, r) l < r
-#define TAPKI_TRIVIAL_EQ(l, r) l == r
+#define TAPKI_TRIVIAL_LESS(l, r) ((l) < (r))
+#define TAPKI_TRIVIAL_EQ(l, r) ((l) == (r))
 
-#define TAPKI_STRING_LESS(l, r) strcmp(l, r) < 0
-#define TAPKI_STRING_EQ(l, r) strcmp(l, r) == 0
+#define TAPKI_STRING_LESS(l, r) (strcmp((l), (r)) < 0)
+#define TAPKI_STRING_EQ(l, r) (strcmp((l), (r)) == 0)
 // ---
 
 // --- Strings
@@ -275,7 +275,7 @@ static bool __##Name##_eq(const void* _lhs, const void* _rhs) { \
     Name##_Key rhs = *(Name##_Key*)_rhs; \
     return Eq(lhs, rhs); \
 } \
-static void* __##Name##_lower_bound(void* _begin, void* _end, const void* _key) { \
+static void* __##Name##_lower_bound(const void* _begin, const void* _end, const void* _key) { \
     Name##_Pair* begin = (Name##_Pair*)_begin; \
     Name##_Pair* end = (Name##_Pair*)_end; \
     Name##_Pair* it;  \
@@ -303,8 +303,8 @@ static const __tpk_map_info __##Name##_info = { \
 Name##_Value *Name##_At(TapkiArena *ar, Name *map, Name##_Key key) {  \
     return (Name##_Value*)__tapki_map_at(ar, map, &key, &__##Name##_info);  \
 } \
-Name##_Value *Name##_Find(Name *map, Name##_Key key) {  \
-        return (Name##_Value*)__tapki_map_find(map, &key, &__##Name##_info);  \
+Name##_Value *Name##_Find(const Name *map, Name##_Key key) {  \
+    return (Name##_Value*)__tapki_map_find(map, &key, &__##Name##_info);  \
 } \
 bool Name##_Erase(Name *map, Name##_Key key) { \
     return __tapki_map_erase(map, &key, &__##Name##_info); \
@@ -329,7 +329,7 @@ void __tapki_vec_erase(void* _vec, size_t idx, size_t tsz);
 
 typedef struct {
     bool(*eq)(const void* lhs, const void* rhs);
-    void*(*lower_bound)(void* beg, void* end, const void* key);
+    void*(*lower_bound)(const void* beg, const void* end, const void* key);
     int key_sizeof;
     int pair_sizeof;
     int pair_align;
@@ -337,7 +337,7 @@ typedef struct {
 } __tpk_map_info;
 
 void* __tapki_map_at(TapkiArena *ar, void* _map, const void* key, const __tpk_map_info* info);
-void* __tapki_map_find(void* _map, const void* key, const __tpk_map_info* info);
+void* __tapki_map_find(const void* _map, const void* key, const __tpk_map_info* info);
 bool __tapki_map_erase(void *map, const void *key, const __tpk_map_info* info);
 
 #define __TPK_STR2(x) #x
@@ -470,9 +470,9 @@ void __tapki_vec_erase(void *_vec, size_t idx, size_t tsz)
     if (TAPKI_UNLIKELY(vec->size <= idx))
         TapkiDie("vector.erase: index(%zu) > size(%zu)", idx, vec->size);
     size_t tail = (--vec->size) - idx;
-    char* dest = vec->d + idx * tsz;
-    char* src = dest + tsz;
     if (tail) {
+        char* dest = vec->d + idx * tsz;
+        char* src = dest + tsz;
         memmove(dest, src, tail * tsz);
     }
     if (tsz == 1 && vec->d)
@@ -756,9 +756,12 @@ void* __tapki_vec_insert(TapkiArena* ar, void* _vec, size_t idx, size_t tsz, siz
     assert(idx <= vec->size);
     __tapki_vec_reserve(ar, vec, vec->size + 1, tsz, al);
     size_t tail = vec->size++ - idx;
-    char* src = vec->d + idx * tsz;
-    char* dest = src + tsz;
-    memmove(dest, src, tail * tsz);
+    if (tail) {
+        char* src = vec->d + idx * tsz;
+        char* dest = src + tsz;
+        memmove(dest, src, tail * tsz);
+        memset(src, 0, tsz);
+    }
     if (tsz == 1) {
         vec->d[vec->size] = 0;
     }
@@ -784,9 +787,9 @@ void* __tapki_map_at(TapkiArena *ar, void* _map, const void* key, const __tpk_ma
     }
 }
 
-void *__tapki_map_find(void *_map, const void *key, const __tpk_map_info *info)
+void *__tapki_map_find(const void *_map, const void *key, const __tpk_map_info *info)
 {
-    __TapkiVec* map = (__TapkiVec*)_map;
+    const __TapkiVec* map = (const __TapkiVec*)_map;
     char *end = map->d + map->size * info->pair_sizeof;
     char *it = (char*)info->lower_bound(map->d, end, key);
     if (it != end && info->eq(it, key)) {
