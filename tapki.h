@@ -9,6 +9,12 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+#ifdef __has_include
+#if __has_include("sanitizer/asan_interface.h")
+#include "sanitizer/asan_interface.h"
+#endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -374,7 +380,7 @@ static inline void* __tapki_vec_push(TapkiArena* ar, void* _vec, size_t tsz, siz
 static inline void* __tapki_vec_pop(void* _vec, size_t tsz) {
     __TapkiVec* vec = (__TapkiVec*)_vec;
     if (!vec->size) TapkiDie("vector.pop: Vector is empty");
-    return vec->d + (vec->size-- * tsz);
+    return vec->d + (--vec->size * tsz);
 }
 
 static inline void* __tapki_vec_at(void* _vec, size_t pos, size_t tsz) {
@@ -689,6 +695,9 @@ static void __TapkiArenaNext(TapkiArena* ar, size_t cap) {
     next = (__TapkiChunk*)malloc(sizeof(__TapkiChunk) + cap);
     if (TAPKI_UNLIKELY(!next)) TapkiDie("arena.chunk.new");
     next->cap = cap;
+#ifdef ASAN_POISON_MEMORY_REGION
+    ASAN_POISON_MEMORY_REGION(next->buff, next->cap);
+#endif
     next->next = NULL;
     if (ar->current) ar->current->next = next;
     ar->current = next;
@@ -707,6 +716,10 @@ TapkiArena *TapkiArenaCreate(size_t chunkSize)
 
 void *TapkiArenaAllocAligned(TapkiArena *arena, size_t size, size_t align)
 {
+#ifdef ASAN_UNPOISON_MEMORY_REGION
+    size_t misalign = align % 8;
+    if (misalign) align += 8 - misalign;
+#endif
     size_t tail = arena->ptr & (align - 1);
     size_t aligned = tail ? arena->ptr + align - tail : arena->ptr;
     size_t end = aligned + size;
@@ -719,6 +732,9 @@ void *TapkiArenaAllocAligned(TapkiArena *arena, size_t size, size_t align)
         arena->ptr = end;
         result = arena->current->buff + aligned;
     }
+#ifdef ASAN_UNPOISON_MEMORY_REGION
+    ASAN_UNPOISON_MEMORY_REGION(result, size);
+#endif
     if (size) memset(result, 0, size);
     return result;
 }
@@ -735,6 +751,11 @@ char *TapkiArenaAllocChars(TapkiArena *arena, size_t count)
 
 void TapkiArenaClear(TapkiArena* arena)
 {
+#ifdef ASAN_POISON_MEMORY_REGION
+    for (__TapkiChunk* it = arena->root; it; it = it->next) {
+        ASAN_POISON_MEMORY_REGION(it->buff, it->cap);
+    }
+#endif
     arena->ptr = 0;
     arena->current = arena->root;
 }
@@ -830,6 +851,9 @@ char *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, 
         // If we can just grow arena (vector is at the end of it) we do not relocate
         if (arenaEnd == vecEnd && vecNewEnd < arenaCap) {
             ar->ptr += (uintptr_t)(vecNewEnd - vecEnd);
+#ifdef ASAN_UNPOISON_MEMORY_REGION
+            ASAN_UNPOISON_MEMORY_REGION(vec->d, vec->cap * tsz);
+#endif
         } else {
             char* newData = (char*)TapkiArenaAllocAligned(ar, vec->cap * tsz, al);
             _TAPKI_MEMCPY(newData, vec->d, vec->size * tsz);
@@ -843,6 +867,10 @@ char *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, 
 
 bool __tapki_vec_shrink(TapkiArena* ar, void* _vec, size_t tsz)
 {
+#ifdef ASAN_POISON_MEMORY_REGION
+    (void)ar, (void)_vec, (void)tsz;
+    return false;
+#else
     __TapkiVec* vec = (__TapkiVec*)_vec;
     uintptr_t arenaEnd = (uintptr_t)(ar->current->buff + ar->ptr);
     uintptr_t vecEnd = (uintptr_t)(vec->d + vec->cap * tsz);
@@ -857,6 +885,7 @@ bool __tapki_vec_shrink(TapkiArena* ar, void* _vec, size_t tsz)
     } else {
         return false;
     }
+#endif
 }
 
 char *__tapki_vec_resize(TapkiArena *ar, void *_vec, size_t count, size_t tsz, size_t al)
