@@ -1490,8 +1490,8 @@ TapkiStr TapkiReadFile(TapkiArena *ar, const char *file)
         TapkiDie("Could not seek file: %s => [Errno: %d] %s\n", file, errno, strerror(errno));
     TapkiStr str = __tapkis_withn(ar, ftell(f));
     rewind(f);
-    int e = fread(str.d, str.size, 1, f);
-    (void)(e = e);
+    // TODO: why this errors with invalid seek and still reads ok?
+    fread(str.d, str.size, 1, f);
     fclose(f);
     return str;
 }
