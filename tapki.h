@@ -9,17 +9,96 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-#ifdef __has_include
-#if __has_include("sanitizer/asan_interface.h")
-#include "sanitizer/asan_interface.h"
-#endif
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-//#undef TAPKI_CLI_NO_TTY
+// Define this to disable TTY detection
+// #undef TAPKI_CLI_NO_TTY
+
+
+// Short API
+#ifndef TAPKI_FULL_NAMESPACE
+
+// typedef TapkiArena Arena;
+// typedef TapkiStr Str;
+// typedef TapkiStrMap StrMap;
+// typedef TapkiStrVec StrVec;
+// typedef TapkiIntVec IntVec;
+// typedef TapkiCLI CLI;
+
+#define Vec(type)                       TapkiVec(type)
+#define VecShrink(vec)                  TapkiVecShrink(arena, vec)
+#define VecAppend(vec, ...)             TapkiVecAppend(arena, vec, ##__VA_ARGS__)
+#define VecPush(vec)                    TapkiVecPush(arena, vec)
+#define VecPop(vec)                     TapkiVecPop(vec)
+#define VecAt(vec, idx)                 TapkiVecAt(vec, idx)
+#define VecForEach(vec, it)             TapkiVecForEach(vec, it)
+#define VecForEachRev(vec, it)          TapkiVecForEachRev(vec, it)
+#define VecErase(vec, idx)              TapkiVecErase(vec, idx)
+#define VecInsert(vec, idx)             TapkiVecInsert(arena, vec, idx)
+#define VecClear(vec)                   TapkiVecClear(vec)
+#define VecReserve(vec, n)              TapkiVecReserve(arena, vec, n)
+#define VecResize(vec, n)               TapkiVecResize(arena, vec, n)
+
+#define ArenaCreate(chunksize)          TapkiArenaCreate(chunksize)
+#define ArenaAllocAligned(ar, sz, al)   TapkiArenaAllocAligned(ar, sz, al)
+#define ArenaAlloc(arena, sz)           TapkiArenaAlloc(arena, sz)
+#define ArenaClear(arena)               TapkiArenaClear(arena)
+#define ArenaFree(arena)                TapkiArenaFree(arena)
+
+#define F(fmt, ...)                     TapkiF(arena, fmt, ##__VA_ARGS__)
+#define S(str)                          TapkiS(arena, str)
+
+#define ToI32(str)                      TapkiToI32(str)
+#define ToU32(str)                      TapkiToU32(str)
+#define ToI64(str)                      TapkiToI64(str)
+#define ToU64(str)                      TapkiToU64(str)
+#define ToFloat(str)                    TapkiToFloat(str)
+
+#define StrAppend(s, part, ...)         TapkiStrAppend(arena, s, part, ##__VA_ARGS__)
+#define StrAppendF(s, fmt, ...)         TapkiStrAppendF(arena, s, fmt, ##__VA_ARGS__)
+#define StrSplit(s, delim)              TapkiStrSplit(arena, s, delim)
+#define StrSub(s, from, to)             TapkiStrSub(arena, s, from, to)
+#define StrFind(s, needle, offs)        TapkiStrFind(s, needle, offs)
+#define StrCopy(chars, len)             TapkiStrCopy(arena, chars, len)
+#define StrRevFind(s, needle)           TapkiStrRevFind(s, needle)
+#define StrContains(s, needle)          TapkiStrContains(s, needle)
+#define StrStartsWith(s, needle)        TapkiStrStartsWith(s, needle)
+#define StrEndsWith(s, needle)          TapkiStrEndsWith(s, needle)
+#define npos                            Tapki_npos
+
+#define StrMap_At(map, key)             TapkiStrMap_At(arena, map, key)
+#define StrMap_Find(map, key)           TapkiStrMap_Find(map, key)
+#define StrMap_Erase(map, key)          TapkiStrMap_Erase(map, key)
+
+#define MapDeclare(map, key, value)     TapkiMapDeclare(map, key, value)
+#define MapImplement(map, less, eq)     TapkiMapImplement(map, less, eq)
+#define TRIVIAL_LESS                    TAPKI_TRIVIAL_LESS
+#define TRIVIAL_EQ                      TAPKI_TRIVIAL_EQ
+#define STRING_LESS                     TAPKI_STRING_LESS
+#define STRING_EQ                       TAPKI_STRING_EQ
+
+#define Die(fmt, ...)                   TapkiDie(fmt, ##__VA_ARGS__)
+#define Assert(...)                     TapkiAssert(...)
+
+#define WriteFile(file, data)           TapkiWriteFile(file, data)
+#define AppendFile(file, data)          TapkiAppendFile(file, data)
+#define ReadFile(file)                  TapkiReadFile(arena, file)
+
+#define PathJoin(...)                   TapkiPathJoin(arena, __VA_ARGS__)
+
+#define ParseCLI(cli, argc, argv)       TapkiParseCLI(arena, cli, argc, argv)
+
+#define FrameF(fmt, ...)                TapkiFrameF(fmt, ##__VA_ARGS__)
+#define Frame()                         TapkiFrame()
+#define Traceback()                     TapkiTraceback(arena)
+
+#endif
+
+// Short API END
+
+
 
 #ifdef __GNUC__
     #define TAPKI_NORETURN __attribute__((noreturn))
@@ -136,7 +215,7 @@ void TapkiAppendFile(const char* file, const char* contents);
 
 // --- Tracebacks
 #define TapkiFrameF(fmt, ...) for( \
-    __tpk_scope __scope = (__tpk_scope){__FILE__":"__TPK_STR(__LINE__), __func__}; \
+    __tpk_scope __scope = {__FILE__":"__TPK_STR(__LINE__), __func__}; \
     !__scope.__f && (fmt ? snprintf(__scope.msg, sizeof(__scope.msg), fmt ? fmt : "!", ##__VA_ARGS__) : (void)0, __tpk_frame_start(&__scope), 1); \
     __tpk_frame_end(), __scope.__f = 1 \
 )
@@ -180,8 +259,6 @@ TapkiStr TapkiCLI_Usage(TapkiArena *ar, const TapkiCLI cli[], int argc, char **a
 TapkiStr TapkiCLI_Help(TapkiArena *ar, const TapkiCLI cli[]);
 // ---
 
-
-// Short API
 #ifndef TAPKI_FULL_NAMESPACE
 
 typedef TapkiArena Arena;
@@ -191,82 +268,7 @@ typedef TapkiStrVec StrVec;
 typedef TapkiIntVec IntVec;
 typedef TapkiCLI CLI;
 
-#define Vec(type)                       TapkiVec(type)
-#define VecShrink(vec)                  TapkiVecShrink(arena, vec)
-#define VecAppend(vec, ...)             TapkiVecAppend(arena, vec, ##__VA_ARGS__)
-#define VecPush(vec)                    TapkiVecPush(arena, vec)
-#define VecPop(vec)                     TapkiVecPop(vec)
-#define VecAt(vec, idx)                 TapkiVecAt(vec, idx)
-#define VecForEach(vec, it)             TapkiVecForEach(vec, it)
-#define VecForEachRev(vec, it)          TapkiVecForEachRev(vec, it)
-#define VecErase(vec, idx)              TapkiVecErase(vec, idx)
-#define VecInsert(vec, idx)             TapkiVecInsert(arena, vec, idx)
-#define VecClear(vec)                   TapkiVecClear(vec)
-#define VecReserve(vec, n)              TapkiVecReserve(arena, vec, n)
-#define VecResize(vec, n)               TapkiVecResize(arena, vec, n)
-
-#define ArenaCreate(chunksize)          TapkiArenaCreate(chunksize)
-#define ArenaAllocAligned(ar, sz, al)   TapkiArenaAllocAligned(ar, sz, al)
-#define ArenaAlloc(arena, sz)           TapkiArenaAlloc(arena, sz)
-#define ArenaClear(arena)               TapkiArenaClear(arena)
-#define ArenaFree(arena)                TapkiArenaFree(arena)
-
-#define F(fmt, ...)                     TapkiF(arena, fmt, ##__VA_ARGS__)
-#define S(str)                          TapkiS(arena, str)
-
-#define ToI32(str)                      TapkiToI32(str)
-#define ToU32(str)                      TapkiToU32(str)
-#define ToI64(str)                      TapkiToI64(str)
-#define ToU64(str)                      TapkiToU64(str)
-#define ToFloat(str)                    TapkiToFloat(str)
-
-#define StrAppend(s, part, ...)         TapkiStrAppend(arena, s, part, ##__VA_ARGS__)
-#define StrAppendF(s, fmt, ...)         TapkiStrAppendF(arena, s, fmt, ##__VA_ARGS__)
-#define StrSplit(s, delim)              TapkiStrSplit(arena, s, delim)
-#define StrSub(s, from, to)             TapkiStrSub(arena, s, from, to)
-#define StrFind(s, needle, offs)        TapkiStrFind(s, needle, offs)
-#define StrCopy(chars, len)             TapkiStrCopy(arena, chars, len)
-#define StrRevFind(s, needle)           TapkiStrRevFind(s, needle)
-#define StrContains(s, needle)          TapkiStrContains(s, needle)
-#define StrStartsWith(s, needle)        TapkiStrStartsWith(s, needle)
-#define StrEndsWith(s, needle)          TapkiStrEndsWith(s, needle)
-#define npos                            Tapki_npos
-
-#define StrMap_At(map, key)             TapkiStrMap_At(arena, map, key)
-#define StrMap_Find(map, key)           TapkiStrMap_Find(map, key)
-#define StrMap_Erase(map, key)          TapkiStrMap_Erase(map, key)
-
-#define MapDeclare(map, key, value)     TapkiMapDeclare(map, key, value)
-#define MapImplement(map, less, eq)     TapkiMapImplement(map, less, eq)
-#define TRIVIAL_LESS                    TAPKI_TRIVIAL_LESS
-#define TRIVIAL_EQ                      TAPKI_TRIVIAL_EQ
-#define STRING_LESS                     TAPKI_STRING_LESS
-#define STRING_EQ                       TAPKI_STRING_EQ
-
-#define Die(fmt, ...)                   TapkiDie(fmt, ##__VA_ARGS__)
-#define Assert(...)                     TapkiAssert(...)
-
-#define WriteFile(file, data)           TapkiWriteFile(file, data)
-#define AppendFile(file, data)          TapkiAppendFile(file, data)
-#define ReadFile(file)                  TapkiReadFile(arena, file)
-
-#define PathJoin(...)                   TapkiPathJoin(arena, __VA_ARGS__)
-
-#define ParseCLI(cli, argc, argv)       TapkiParseCLI(arena, cli, argc, argv)
-
-#define FrameF(fmt, ...)                TapkiFrameF(fmt, ##__VA_ARGS__)
-#define Frame()                         TapkiFrame()
-#define Traceback()                     TapkiTraceback(arena)
-
 #endif
-
-// Short API END
-
-
-
-
-
-
 
 
 
@@ -296,7 +298,7 @@ static void* __##Name##_lower_bound(const void* _begin, const void* _end, const 
             begin = ++it; \
             count -= step + 1; \
         } else { \
-                count = step; \
+            count = step; \
         } \
     } \
     return begin; \
@@ -434,6 +436,12 @@ static inline void* __tapki_vec_at(void* _vec, size_t pos, size_t tsz) {
 
 #ifdef TAPKI_IMPLEMENTATION
 
+
+#ifdef __has_include
+#if __has_include("sanitizer/asan_interface.h")
+#include "sanitizer/asan_interface.h"
+#endif
+#endif
 
 #include <assert.h>
 #include <errno.h>
