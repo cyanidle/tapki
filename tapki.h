@@ -702,7 +702,7 @@ static void __TapkiArenaNext(TapkiArena* ar, size_t cap) {
     next = (__TapkiChunk*)malloc(sizeof(__TapkiChunk) + cap);
     if (TAPKI_UNLIKELY(!next)) TapkiDie("arena.chunk.new");
     next->cap = cap;
-#ifdef ASAN_POISON_MEMORY_REGION
+#ifdef ASAN_DEFINE_REGION_MACROS
     ASAN_POISON_MEMORY_REGION(next->buff, next->cap);
 #endif
     next->next = NULL;
@@ -723,7 +723,7 @@ TapkiArena *TapkiArenaCreate(size_t chunkSize)
 
 void *TapkiArenaAllocAligned(TapkiArena *arena, size_t size, size_t align)
 {
-#ifdef ASAN_UNPOISON_MEMORY_REGION
+#ifdef ASAN_DEFINE_REGION_MACROS
     size_t misalign = align % 8;
     if (misalign) align += 8 - misalign;
 #endif
@@ -739,7 +739,7 @@ void *TapkiArenaAllocAligned(TapkiArena *arena, size_t size, size_t align)
         arena->ptr = end;
         result = arena->current->buff + aligned;
     }
-#ifdef ASAN_UNPOISON_MEMORY_REGION
+#ifdef ASAN_DEFINE_REGION_MACROS
     ASAN_UNPOISON_MEMORY_REGION(result, size);
 #endif
     if (size) memset(result, 0, size);
@@ -758,7 +758,7 @@ char *TapkiArenaAllocChars(TapkiArena *arena, size_t count)
 
 void TapkiArenaClear(TapkiArena* arena)
 {
-#ifdef ASAN_POISON_MEMORY_REGION
+#ifdef ASAN_DEFINE_REGION_MACROS
     for (__TapkiChunk* it = arena->root; it; it = it->next) {
         ASAN_POISON_MEMORY_REGION(it->buff, it->cap);
     }
@@ -858,7 +858,7 @@ char *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, 
         // If we can just grow arena (vector is at the end of it) we do not relocate
         if (arenaEnd == vecEnd && vecNewEnd < arenaCap) {
             ar->ptr += (uintptr_t)(vecNewEnd - vecEnd);
-#ifdef ASAN_UNPOISON_MEMORY_REGION
+#ifdef ASAN_DEFINE_REGION_MACROS
             ASAN_UNPOISON_MEMORY_REGION(vec->d, vec->cap * tsz);
 #endif
         } else {
@@ -874,7 +874,7 @@ char *__tapki_vec_reserve(TapkiArena *ar, void *_vec, size_t count, size_t tsz, 
 
 bool __tapki_vec_shrink(TapkiArena* ar, void* _vec, size_t tsz)
 {
-#ifdef ASAN_POISON_MEMORY_REGION
+#ifdef ASAN_DEFINE_REGION_MACROS
     (void)ar, (void)_vec, (void)tsz;
     return false;
 #else
