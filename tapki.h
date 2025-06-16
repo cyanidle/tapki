@@ -17,6 +17,8 @@ extern "C" {
 // #undef TAPKI_CLI_NO_TTY
 
 
+// If TAPKI_FULL_NAMESPACE is not defined -> you can use Public API without Tapki* prefix
+
 // Short API
 #ifndef TAPKI_FULL_NAMESPACE
 
@@ -99,7 +101,6 @@ extern "C" {
 // Short API END
 
 
-
 #ifdef __GNUC__
     #define TAPKI_NORETURN __attribute__((noreturn))
     #define TAPKI_UNLIKELY(x) __builtin_expect(!!(x), 0)
@@ -115,8 +116,6 @@ extern "C" {
     #define TAPKI_ALLOC_ATTR(sz, al)
     #define TAPKI_FMT_ATTR(fmt, args)
 #endif
-
-// If TAPKI_FULL_NAMESPACE is not defined -> you can use Public API without Tapki prefix
 
 TAPKI_FMT_ATTR(1, 2) TAPKI_NORETURN
 void TapkiDie(const char* __restrict__ fmt, ...);
