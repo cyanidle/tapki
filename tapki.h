@@ -971,10 +971,10 @@ TapkiStr TapkiS(TapkiArena *ar, const char *s)
     return result;
 }
 
-static FILE* __tpk_open(const char* file, const char* mode, const char* comment) {
+static FILE* __tpk_open(const char* file, const char* mode, const char* action) {
     FILE* f = fopen(file, mode);
     if (!f) {
-        TapkiDie("Could not open for %s: %s => [Errno: %d] %s\n", comment, file, errno, strerror(errno));\
+        TapkiDie("Could not open for %s: %s => [Errno: %d] %s\n", action, file, errno, strerror(errno));
     }
     return f;
 }
@@ -1168,9 +1168,6 @@ static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCL
             bool was_pos = false;
             bool was_named = false;
             bool last_pos_required = false;
-            #ifdef _MSC_VER
-            #define __tpk_strtok
-            #endif
             while ((alias = __tpk_strtok(saveptr ? NULL : names, ",", &saveptr))) {
                 alias = (char*)__tpk_cli_dashes(alias, &dashes);
                 if (!it->firstAlias) {
