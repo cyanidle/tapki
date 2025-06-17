@@ -31,7 +31,6 @@ extern "C" {
 
 #define Vec(type)                       TapkiVec(type)
 #define VecShrink(vec)                  TapkiVecShrink(arena, vec)
-#define VecAppend(vec, ...)             TapkiVecAppend(arena, vec, ##__VA_ARGS__)
 #define VecPush(vec)                    TapkiVecPush(arena, vec)
 #define VecPop(vec)                     TapkiVecPop(vec)
 #define VecAt(vec, idx)                 TapkiVecAt(vec, idx)
@@ -49,7 +48,7 @@ extern "C" {
 #define ArenaClear(arena)               TapkiArenaClear(arena)
 #define ArenaFree(arena)                TapkiArenaFree(arena)
 
-#define F(fmt, ...)                     TapkiF(arena, fmt, ##__VA_ARGS__)
+#define F(...)                          TapkiF(arena, __VA_ARGS__)
 #define S(str)                          TapkiS(arena, str)
 
 #define ToI32(str)                      TapkiToI32(str)
@@ -58,8 +57,9 @@ extern "C" {
 #define ToU64(str)                      TapkiToU64(str)
 #define ToFloat(str)                    TapkiToFloat(str)
 
-#define StrAppend(s, part, ...)         TapkiStrAppend(arena, s, part, ##__VA_ARGS__)
-#define StrAppendF(s, fmt, ...)         TapkiStrAppendF(arena, s, fmt, ##__VA_ARGS__)
+    
+#define StrAppend(s, ...)               TapkiStrAppend(arena, s, __VA_ARGS__)
+#define StrAppendF(s, ...)              TapkiStrAppendF(arena, s, __VA_ARGS__)
 #define StrSplit(s, delim)              TapkiStrSplit(arena, s, delim)
 #define StrSub(s, from, to)             TapkiStrSub(arena, s, from, to)
 #define StrFind(s, needle, offs)        TapkiStrFind(s, needle, offs)
@@ -81,18 +81,18 @@ extern "C" {
 #define STRING_LESS                     TAPKI_STRING_LESS
 #define STRING_EQ                       TAPKI_STRING_EQ
 
-#define Die(fmt, ...)                   TapkiDie(fmt, ##__VA_ARGS__)
-#define Assert(...)                     TapkiAssert(...)
+#define Die(...)                        TapkiDie(__VA_ARGS__)
+#define Assert(...)                     TapkiAssert(__VA_ARGS__)
 
-#define WriteFile(file, data)           TapkiWriteFile(file, data)
-#define AppendFile(file, data)          TapkiAppendFile(file, data)
-#define ReadFile(file)                  TapkiReadFile(arena, file)
+#define FileWrite(file, data)           TapkiFileWrite(file, data)
+#define FileAppend(file, data)          TapkiFileAppend(file, data)
+#define FileRead(file)                  TapkiFileRead(arena, file)
 
 #define PathJoin(...)                   TapkiPathJoin(arena, __VA_ARGS__)
 
 #define ParseCLI(cli, argc, argv)       TapkiParseCLI(arena, cli, argc, argv)
 
-#define FrameF(fmt, ...)                TapkiFrameF(fmt, ##__VA_ARGS__)
+#define FrameF(...)                     TapkiFrameF(__VA_ARGS__)
 #define Frame()                         TapkiFrame()
 #define Traceback()                     TapkiTraceback(arena)
 
@@ -102,23 +102,37 @@ extern "C" {
 
 
 #ifdef __GNUC__
+    #define TAPKI_THREAD_LOCAL __thread
     #define TAPKI_NORETURN __attribute__((noreturn))
     #define TAPKI_UNLIKELY(x) __builtin_expect(!!(x), 0)
     #define TAPKI_ALLOC_ATTR(sz, al) __attribute__((malloc, alloc_size(sz), alloc_align(al)))
     #define TAPKI_FMT_ATTR(fmt, args) __attribute__((format(printf, fmt, args)))
-#else
-    #if defined(_MSC_VER)
-        #define TAPKI_NORETURN __declspec(noreturn)
-    #else
-        #define TAPKI_NORETURN
-    #endif
+    #define TAPKI_RESTRICT __restrict__
+    #define __tpk_strtok strtok_r
+    #define __tpk_alloca alloca
+#elif defined(_MSC_VER)
+    #define TAPKI_THREAD_LOCAL __declspec(thread)
+    #define TAPKI_NORETURN __declspec(noreturn)
     #define TAPKI_UNLIKELY(x) x
     #define TAPKI_ALLOC_ATTR(sz, al)
     #define TAPKI_FMT_ATTR(fmt, args)
+    #define TAPKI_RESTRICT
+    #define __tpk_strtok strtok_s
+    #define __tpk_alloca _malloca
+    #include <malloc.h>
+#else
+    #define TAPKI_THREAD_LOCAL
+    #define TAPKI_NORETURN
+    #define TAPKI_UNLIKELY(x) x
+    #define TAPKI_ALLOC_ATTR(sz, al)
+    #define TAPKI_FMT_ATTR(fmt, args)
+    #define TAPKI_RESTRICT
+    #define __tpk_strtok strtok_r
+    #define __tpk_alloca alloca
 #endif
 
 TAPKI_FMT_ATTR(1, 2) TAPKI_NORETURN
-void TapkiDie(const char* __restrict__ fmt, ...);
+void TapkiDie(const char* TAPKI_RESTRICT fmt, ...);
 #define TapkiAssert(...) TapkiFrame() { if (!(__VA_ARGS__)) Die("Assertion failed: " #__VA_ARGS__); }
 
 // --- Arena
@@ -135,11 +149,10 @@ void TapkiArenaFree(TapkiArena* arena);
 // --- Vectors
 #define TapkiVec(type) struct { type* d; size_t size; size_t cap; }
 #define TapkiVecShrink(arena, vec) __tapki_vec_shrink(arena, (vec), TapkiVecS(vec))
-#define TapkiVecT(vec) __typeof__(*(vec)->d)
-#define TapkiVecS(vec) sizeof(*(vec)->d)
+#define TapkiVecT(vec) __typeof__((vec)->d[0])
+#define TapkiVecS(vec) sizeof((vec)->d[0])
 #define TapkiVecA(vec) _Alignof(TapkiVecT(vec))
 #define TapkiVecSA(vec) TapkiVecS(vec), TapkiVecA(vec)
-#define TapkiVecAppend(arena, vec, ...) __tapki_vec_append((arena), (vec), __TapkiArr(TapkiVecT(vec), __VA_ARGS__), TapkiVecSA(vec))
 #define TapkiVecPush(arena, vec) ((TapkiVecT(vec)*)__tapki_vec_push((arena), (vec), TapkiVecSA(vec)))
 #define TapkiVecPop(vec)  ((TapkiVecT(vec)*)__tapki_vec_pop((vec), TapkiVecS(vec)))
 #define TapkiVecAt(vec, idx)  ((TapkiVecT(vec)*)__tapki_vec_at((vec), idx, TapkiVecS(vec)) + idx)
@@ -185,8 +198,8 @@ TapkiMapDeclare(TapkiStrMap, char*, TapkiStr);
 #define TapkiStrAppend(arena, s, ...) __tapkis_append((arena), (s), __TapkiArr(const char*, __VA_ARGS__))
 
 TapkiStr TapkiStrSub(TapkiArena *ar, const char* target, size_t from, size_t to);
-TAPKI_FMT_ATTR(3, 4) TapkiStr* TapkiStrAppendF(TapkiArena *ar, TapkiStr* str, const char* __restrict__ fmt, ...);
-TapkiStr* TapkiStrAppendVF(TapkiArena *ar, TapkiStr* str, const char* __restrict__ fmt, va_list list);
+TAPKI_FMT_ATTR(3, 4) TapkiStr* TapkiStrAppendF(TapkiArena *ar, TapkiStr* str, const char* TAPKI_RESTRICT fmt, ...);
+TapkiStr* TapkiStrAppendVF(TapkiArena *ar, TapkiStr* str, const char* TAPKI_RESTRICT fmt, va_list list);
 size_t TapkiStrFind(const char* target, const char* what, size_t offset);
 TapkiStr TapkiStrCopy(TapkiArena *ar, const char* target, size_t len);
 size_t TapkiStrRevFind(const char* target, const char* what);
@@ -194,8 +207,8 @@ bool TapkiStrContains(const char* target, const char* what);
 bool TapkiStrStartsWith(const char* target, const char* what);
 bool TapkiStrEndsWith(const char* target, const char* what);
 TapkiStrVec TapkiStrSplit(TapkiArena *ar, const char* target, const char *delim);
-TAPKI_FMT_ATTR(2, 3) TapkiStr TapkiF(TapkiArena* ar, const char* __restrict__ fmt, ...);
-TapkiStr TapkiVF(TapkiArena* ar, const char* __restrict__ fmt, va_list list);
+TAPKI_FMT_ATTR(2, 3) TapkiStr TapkiF(TapkiArena* ar, const char* TAPKI_RESTRICT fmt, ...);
+TapkiStr TapkiVF(TapkiArena* ar, const char* TAPKI_RESTRICT fmt, va_list list);
 TapkiStr TapkiS(TapkiArena* ar, const char* s);
 
 int32_t TapkiToI32(const char* s);
@@ -206,18 +219,25 @@ double TapkiToFloat(const char* s);
 // ---
 
 // --- Files
-TapkiStr TapkiReadFile(TapkiArena* ar, const char* file);
-void TapkiWriteFile(const char* file, const char* contents);
-void TapkiAppendFile(const char* file, const char* contents);
+TapkiStr TapkiFileRead(TapkiArena* ar, const char* file);
+void TapkiFileWrite(const char* file, const char* contents);
+void TapkiFileAppend(const char* file, const char* contents);
 #define TapkiPathJoin(arena, ...) __tpk_path_join(arena, __TapkiArr(const char*, __VA_ARGS__))
 // ---
 
 // --- Tracebacks
+#ifdef _MSC_VER
 #define TapkiFrameF(fmt, ...) for( \
     __tpk_scope __scope = {__FILE__":"__TPK_STR(__LINE__), __func__}; \
-    !__scope.__f && (fmt ? snprintf(__scope.msg, sizeof(__scope.msg), fmt ? fmt : "!", ##__VA_ARGS__) : (void)0, __tpk_frame_start(&__scope), 1); \
+    !__scope.__f && (fmt ? snprintf(__scope.msg, sizeof(__scope.msg), fmt ? fmt : "!", __VA_ARGS__) : (void)0, __tpk_frame_start(&__scope), 1); \
     __tpk_frame_end(), __scope.__f = 1 \
 )
+#else
+#define TapkiFrameF(fmt, ...) for (                                                                                                               \
+    __tpk_scope __scope = { __FILE__ ":"__TPK_STR(__LINE__), __func__ };                                                                          \
+    !__scope.__f && (fmt ? snprintf(__scope.msg, sizeof(__scope.msg), fmt ? fmt : "!", ##__VA_ARGS__) : (void)0, __tpk_frame_start(&__scope), 1); \
+    __tpk_frame_end(), __scope.__f = 1)
+#endif
 #define TapkiFrame() TapkiFrameF(NULL)
 #define TapkiFramesIter(frame) TapkiVecForEachRev(&__tpk_gframes.frames, frame)
 TapkiStr TapkiTraceback(TapkiArena* arena);
@@ -370,7 +390,7 @@ typedef struct __tpk_frames {
     TapkiArena* arena;
 } __tpk_frames;
 
-extern _Thread_local __tpk_frames __tpk_gframes;
+extern TAPKI_THREAD_LOCAL __tpk_frames __tpk_gframes;
 
 
 static inline void* __tapki_vec_push(TapkiArena* ar, void* _vec, size_t tsz, size_t al) {
@@ -390,11 +410,23 @@ static inline void* __tapki_vec_at(void* _vec, size_t pos, size_t tsz) {
     return vec->d;
 }
 
-#define PP_NARG(...) \
-    PP_NARG_(__VA_ARGS__, PP_RSEQ_N())
-#define PP_NARG_(...) \
-    PP_128TH_ARG(__VA_ARGS__)
-#define PP_128TH_ARG(                                           \
+#define PP_EXPAND(x) x
+#define PP_NARG(...) PP_EXPAND(PP_NARG_(__VA_ARGS__,    \
+    124, 123, 122, 121, 120,                            \
+    119, 118, 117, 116, 115, 114, 113, 112, 111, 110,   \
+    109, 108, 107, 106, 105, 104, 103, 102, 101, 100,   \
+    99, 98, 97, 96, 95, 94, 93, 92, 91, 90,             \
+    89, 88, 87, 86, 85, 84, 83, 82, 81, 80,             \
+    79, 78, 77, 76, 75, 74, 73, 72, 71, 70,             \
+    69, 68, 67, 66, 65, 64, 63, 62, 61, 60,             \
+    59, 58, 57, 56, 55, 54, 53, 52, 51, 50,             \
+    49, 48, 47, 46, 45, 44, 43, 42, 41, 40,             \
+    39, 38, 37, 36, 35, 34, 33, 32, 31, 30,             \
+    29, 28, 27, 26, 25, 24, 23, 22, 21, 20,             \
+    19, 18, 17, 16, 15, 14, 13, 12, 11, 10,             \
+    9, 8, 7, 6, 5, 4, 3, 2, 1, 0))
+
+#define PP_NARG_( \
     _1, _2, _3, _4, _5, _6, _7, _8, _9, _10,                    \
     _11, _12, _13, _14, _15, _16, _17, _18, _19, _20,           \
     _21, _22, _23, _24, _25, _26, _27, _28, _29, _30,           \
@@ -407,21 +439,8 @@ static inline void* __tapki_vec_at(void* _vec, size_t pos, size_t tsz) {
     _91, _92, _93, _94, _95, _96, _97, _98, _99, _100,          \
     _101, _102, _103, _104, _105, _106, _107, _108, _109, _110, \
     _111, _112, _113, _114, _115, _116, _117, _118, _119, _120, \
-    _121, _122, _123, _124, _125, _126, _127, N, ...) N
-#define PP_RSEQ_N()                                       \
-    127, 126, 125, 124, 123, 122, 121, 120,               \
-    119, 118, 117, 116, 115, 114, 113, 112, 111, 110, \
-    109, 108, 107, 106, 105, 104, 103, 102, 101, 100, \
-    99, 98, 97, 96, 95, 94, 93, 92, 91, 90,           \
-    89, 88, 87, 86, 85, 84, 83, 82, 81, 80,           \
-    79, 78, 77, 76, 75, 74, 73, 72, 71, 70,           \
-    69, 68, 67, 66, 65, 64, 63, 62, 61, 60,           \
-    59, 58, 57, 56, 55, 54, 53, 52, 51, 50,           \
-    49, 48, 47, 46, 45, 44, 43, 42, 41, 40,           \
-    39, 38, 37, 36, 35, 34, 33, 32, 31, 30,           \
-    29, 28, 27, 26, 25, 24, 23, 22, 21, 20,           \
-    19, 18, 17, 16, 15, 14, 13, 12, 11, 10,           \
-    9, 8, 7, 6, 5, 4, 3, 2, 1, 0
+    _121, _122, _123, _124, N, ...) N
+    
 
 #ifdef __cplusplus
 }
@@ -453,14 +472,14 @@ extern "C" {
 
 
 #ifdef _WIN32
-static const char* __tpk_sep = "\\"
+static const char* __tpk_sep = "\\";
 #else
 static const char* __tpk_sep = "/";
 #endif
 
 #define _TAPKI_MEMCPY(dest, src, count) if (src && count) memcpy(dest, src, count)
 
-_Thread_local __tpk_frames __tpk_gframes;
+TAPKI_THREAD_LOCAL __tpk_frames __tpk_gframes;
 
 void __tpk_frame_start(__tpk_scope *scope)
 {
@@ -507,7 +526,7 @@ TapkiStr TapkiTraceback(TapkiArena *arena)
             TapkiStrAppend(arena, &result, " => ");
             TapkiStrAppend(arena, &result, frame->s->msg);
         }
-        TapkiVecAppend(arena, &result, '\n');
+        TapkiStrAppend(arena, &result, "\n");
     }
     return longest ? result : (TapkiStr){0};
 }
@@ -554,20 +573,10 @@ static TapkiStr __tapkis_withn(TapkiArena* ar, size_t res) {
     return str;
 }
 
-void __tapki_vec_append(TapkiArena *ar, void *_vec, void *data, size_t count, size_t tsz, size_t al)
-{
-    __TapkiVec* vec = (__TapkiVec*)_vec;
-    __tapki_vec_reserve(ar, vec, vec->size + count, tsz, al);
-    _TAPKI_MEMCPY(vec->d + vec->size * tsz, data, count * tsz);
-    vec->size += count;
-    if (tsz == 1 && vec->d)
-        vec->d[vec->size] = 0;
-}
-
 TapkiStr* __tapkis_append(TapkiArena *ar, TapkiStr *target, const char** strs, size_t count)
 {
     size_t total = 0;
-    size_t lens[count];
+    size_t* lens = __tpk_alloca(sizeof(size_t) * count);
     for (size_t i = 0; i < count; ++i) {
         total += (lens[i] = strlen(strs[i]));
     }
@@ -671,7 +680,7 @@ TapkiStrVec TapkiStrSplit(TapkiArena *ar, const char *target, const char *delim)
     while(true) {
         pos = TapkiStrFind(target, delim, offs);
         TapkiStr part = TapkiStrSub(ar, target, offs, pos);
-        TapkiVecAppend(ar, &result, part);
+        *TapkiVecPush(ar, &result) = part;
         if (pos == Tapki_npos) {
             return result;
         }
@@ -945,7 +954,7 @@ TapkiStr* TapkiStrAppendF(TapkiArena *ar, TapkiStr *str, const char *fmt, ...)
     return str;
 }
 
-TapkiStr TapkiF(TapkiArena *ar, const char*__restrict__ fmt, ...)
+TapkiStr TapkiF(TapkiArena *ar, const char*TAPKI_RESTRICT fmt, ...)
 {
     va_list vargs;
     va_start(vargs, fmt);
@@ -970,14 +979,14 @@ static FILE* __tpk_open(const char* file, const char* mode, const char* comment)
     return f;
 }
 
-void TapkiWriteFile(const char *file, const char *contents)
+void TapkiFileWrite(const char *file, const char *contents)
 {
     FILE* f = __tpk_open(file, "wb", "write");
     fwrite(contents, strlen(contents), 1, f);
     fclose(f);
 }
 
-void TapkiAppendFile(const char *file, const char *contents)
+void TapkiFileAppend(const char *file, const char *contents)
 {
     FILE* f = __tpk_open(file, "ab", "append");
     fwrite(contents, strlen(contents), 1, f);
@@ -1128,7 +1137,7 @@ static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCL
             *it = (__tpk_cli_priv){curr, curr->metavar};
             curr++;
         }
-        TapkiVecAppend(ar, &ctx->_storage, (__tpk_cli_priv){&ctx->help_opt});
+        *TapkiVecPush(ar, &ctx->_storage) = (__tpk_cli_priv){&ctx->help_opt};
     }
     TapkiArena* temp = TapkiArenaCreate(256);
     TapkiVecForEach(&ctx->_storage, it) {
@@ -1159,7 +1168,10 @@ static void __tpk_cli_init(TapkiArena *ar, __tpk_cli_context* ctx, const TapkiCL
             bool was_pos = false;
             bool was_named = false;
             bool last_pos_required = false;
-            while((alias = strtok_r(saveptr ? NULL : names, ",", &saveptr))) {
+            #ifdef _MSC_VER
+            #define __tpk_strtok
+            #endif
+            while ((alias = __tpk_strtok(saveptr ? NULL : names, ",", &saveptr))) {
                 alias = (char*)__tpk_cli_dashes(alias, &dashes);
                 if (!it->firstAlias) {
                     it->firstAlias = alias;
@@ -1519,7 +1531,7 @@ int TapkiParseCLI(TapkiArena *ar, TapkiCLI cli[], int argc, char **argv)
     return 0;
 }
 
-TapkiStr TapkiReadFile(TapkiArena *ar, const char *file)
+TapkiStr TapkiFileRead(TapkiArena *ar, const char *file)
 {
     FILE* f = __tpk_open(file, "rb", "read");
     if (fseek(f, 0, SEEK_END))
@@ -1538,7 +1550,7 @@ TapkiStr __tpk_path_join(TapkiArena *ar, const char **parts, size_t count)
     for (size_t i = 0; i < count; ++i) {
         const char* part = parts[i];
         if (i) {
-            TapkiVecAppend(ar, &res, *__tpk_sep);
+            *TapkiVecPush(ar, &res) = *__tpk_sep;
         }
         TapkiStrAppend(ar, &res, part);
     }
