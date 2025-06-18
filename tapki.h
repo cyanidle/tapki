@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -238,6 +239,7 @@ void TapkiFileAppend(const char* file, const char* contents);
     !__scope.__f && (fmt ? snprintf(__scope.msg, sizeof(__scope.msg), fmt ? fmt : "!", ##__VA_ARGS__) : (void)0, __tpk_frame_start(&__scope), 1); \
     __tpk_frame_end(), __scope.__f = 1)
 #endif
+
 #define TapkiFrame() TapkiFrameF(NULL)
 #define TapkiFramesIter(frame) TapkiVecForEachRev(&__tpk_gframes.frames, frame)
 TapkiStr TapkiTraceback(TapkiArena* arena);
