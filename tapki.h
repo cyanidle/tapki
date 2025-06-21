@@ -82,6 +82,7 @@ extern "C" {
 #define STRING_LESS                     TAPKI_STRING_LESS
 #define STRING_EQ                       TAPKI_STRING_EQ
 
+#define SetDiePrefix(prefix)            TapkiSetDiePrefix(prefix)
 #define Die(...)                        TapkiDie(__VA_ARGS__)
 #define Assert(...)                     TapkiAssert(__VA_ARGS__)
 
@@ -132,8 +133,8 @@ extern "C" {
     #define __tpk_alloca alloca
 #endif
 
-TAPKI_FMT_ATTR(1, 2) TAPKI_NORETURN
-void TapkiDie(const char* TAPKI_RESTRICT fmt, ...);
+void TapkiSetDiePrefix(const char* prefix);
+TAPKI_FMT_ATTR(1, 2) TAPKI_NORETURN void TapkiDie(const char* TAPKI_RESTRICT fmt, ...);
 #define TapkiAssert(...) TapkiFrame() { if (!(__VA_ARGS__)) Die("Assertion failed: " #__VA_ARGS__); }
 
 // --- Arena
@@ -534,6 +535,13 @@ TapkiStr TapkiTraceback(TapkiArena *arena)
     return longest ? result : (TapkiStr){0};
 }
 
+static const char* __tpk_die_prefix = "Fatal Error: ";
+
+void TapkiSetDiePrefix(const char* prefix)
+{
+    __tpk_die_prefix = prefix;
+}
+
 void TapkiDie(const char *fmt, ...)
 {
     static bool _recursive = false;
@@ -543,7 +551,7 @@ void TapkiDie(const char *fmt, ...)
         exit(1);
     }
     _recursive = true;
-    fputs("Fatal Error: ", stderr);
+    fputs(__tpk_die_prefix, stderr);
     { //user msg
         va_list vargs;
         va_start(vargs, fmt);
