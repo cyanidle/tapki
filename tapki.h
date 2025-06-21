@@ -1405,8 +1405,9 @@ static void __tpk_cli_wrapping_help(size_t pad, size_t termw, TapkiArena *ar, Ta
     int rlen = 0, wrap = 0;
 again:
     rlen = (int)strlen(help);
-    if (termw && (rlen + pad + 3) > termw) {
-        int diff = termw - (pad + 3);
+    // 4 spaces
+    if (termw && (rlen + pad + 4) > termw) {
+        int diff = termw - (pad + 4);
         wrap = diff > 0 ? diff : 10;
     } else {
         wrap = (int)rlen;
