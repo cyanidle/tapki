@@ -10,6 +10,9 @@ void Test_Maps(Arena* arena) {
     *StrMap_At(&map, "2") = S("2");
     *StrMap_At(&map, "3") = S("3");
     ASSERT(map.size == 4);
+    TapkiMapForEach(&map, it) {
+
+    }
     StrMap_Erase(&map, "2");
     ASSERT(map.size == 3);
     ASSERT(strcmp(StrMap_Find(&map, "3")->d, "3") == 0);
